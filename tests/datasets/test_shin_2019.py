@@ -358,3 +358,456 @@ def test_load_streams_a_stream_only_session_that_is_not_cached(
     with pytest.raises(RuntimeError, match="stop"):
         _load.load("shin_2019", cache=tmp_path)
     assert seen["source"] == "https://streamed"
+
+
+# --------------------------------------------------------------------------
+# Real sessions (DANDI 000978, read by byte range)
+# --------------------------------------------------------------------------
+
+#: "positions within 15 cm of reward wells" (STAR Methods): the template cut,
+#: and here also the radius of a well visit's arrival and departure.
+WELL_RADIUS = 15.0
+#: The paper's immobility (<= 4 cm/s) and movement (> 5 cm/s) speeds, cm/s.
+IMMOBILE = 4.0
+MOVING = 5.0
+#: Unit inclusion and place cells: >= 100 spikes in each session, peak >= 3 Hz.
+MIN_SPIKES = 100
+PLACE_PEAK = 3.0
+#: Linearized maps: Gaussian 4 cm SD, occupancy > 20 ms (2 cm bins: params).
+MAP_BANDWIDTH = 4.0
+MIN_OCCUPANCY = 0.02
+#: Replay: 10 ms bins; the four W-maze trajectories by start and end well.
+REPLAY_BIN = 0.01
+PATHS = {"1-2": (1, 2), "2-1": (2, 1), "1-3": (1, 3), "3-1": (3, 1)}
+SEED = 2019
+#: The lab code's sampling: 10,000 samples, R-squared averaged over 500
+#: draws, 1,500 shuffles.
+LAB_SAMPLES = 10_000
+LAB_RESAMPLES = 500
+LAB_SHUFFLES = 1500
+
+
+def _runs(mask):
+    """[first, last] index of each run of True, as a list of pairs."""
+    edges = np.diff(np.r_[0, mask.astype(np.int8), 0])
+    return list(
+        zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1) - 1, strict=True)
+    )
+
+
+def _well_visits(rec, speed):
+    """The immobility period at the start well of each trial (our reading).
+
+    The infrared beam times are not in the file. Arrival and departure are the
+    first and last sample of the last run of samples within 15 cm of the well
+    before the trial starts (from the previous trial's start, or the run
+    epoch's); entry is the first sample from arrival with speed <= 4 cm/s
+    ("the first time point when the speed fell below 4 cm/s before the arrival
+    trigger"), exit the first sample of the last stretch above 4 cm/s that
+    reaches departure, or the first above 4 cm/s after it ("the first time point
+    when the speed rose above 4 cm/s after the departure trigger").
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per trial: ``epoch``, ``well``, ``correct``, ``entry``, ``exit``
+        (s, NaN where the rat is never within 15 cm of the well) and
+        ``duration``.
+    """
+    import pandas as pd
+
+    t, pos = rec.times, rec.positions
+    table = rec.trials.intervals_table().sort_values("start_time")
+    table = table.reset_index(drop=True)
+    run = np.asarray(rec.epochs["run"])
+    starts = table["start_time"].to_numpy()
+    epoch_of = np.searchsorted(run[:, 0], starts, side="right") - 1
+    rows = []
+    for j, trial in table.iterrows():
+        well = int(trial["start_well"])
+        same = j > 0 and epoch_of[j - 1] == epoch_of[j]
+        first = starts[j - 1] if same else run[epoch_of[j], 0]
+        k = np.flatnonzero((t >= first) & (t < starts[j]))
+        entry = leave = np.nan
+        centre = rec.env.regions[f"well_{well}"].data
+        near = np.linalg.norm(pos[k] - centre, axis=1) <= WELL_RADIUS
+        if k.size and (stretches := _runs(near)):
+            a, d = k[stretches[-1][0]], k[stretches[-1][1]]
+            still = np.flatnonzero(speed[a : d + 1] <= IMMOBILE)
+            if not still.size:
+                entry = leave = t[a]
+            else:
+                begin = a + still[0]
+                if speed[d] <= IMMOBILE:
+                    after = np.flatnonzero(speed[d:] > IMMOBILE)
+                    end = d + after[0] if after.size else t.size - 1
+                else:
+                    end = begin + _runs(speed[begin : d + 1] > IMMOBILE)[-1][0]
+                entry, leave = t[begin], t[end]
+        rows.append(
+            {
+                "epoch": int(epoch_of[j]),
+                "well": well,
+                "correct": bool(trial["correct"] == 1),
+                "entry": entry,
+                "exit": leave,
+            }
+        )
+    visits = pd.DataFrame(rows)
+    visits["duration"] = visits["exit"] - visits["entry"]
+    return visits
+
+
+def _trajectory_envs(rec):
+    """Each trajectory from well to well on the loader's W-maze, cut 15 cm at each end."""
+    import networkx as nx
+
+    from neurospatial import Environment
+    from neurospatial.datasets import shin_2019
+    from neurospatial.datasets._recording import tracked_mask
+    from neurospatial.datasets._tracks import nearest_segment
+
+    run = np.asarray(rec.epochs["run"])
+    samples = rec.positions[
+        shin_2019._within(rec.times, run) & tracked_mask(rec.positions)
+    ]
+    nodes = shin_2019._fit_w_maze(samples)  # the loader's fit, deterministic
+    distance = nearest_segment(
+        samples,
+        np.array([nodes[a] for a, _ in shin_2019._EDGES]),
+        np.array([nodes[b] for _, b in shin_2019._EDGES]),
+    ).distance
+    width = max(2 * float(np.quantile(distance, 0.99)), shin_2019.TRACK_WIDTH)
+    envs = {}
+    for name, (start, end) in PATHS.items():
+        a, b = nodes[f"well_{start}"], nodes[f"base_{start}"]
+        c, d = nodes[f"base_{end}"], nodes[f"well_{end}"]
+        corners = [
+            a + (b - a) * WELL_RADIUS / np.linalg.norm(b - a),
+            b,
+            c,
+            d + (c - d) * WELL_RADIUS / np.linalg.norm(c - d),
+        ]
+        graph = nx.Graph()
+        for k, xy in enumerate(corners):
+            graph.add_node(k, pos=tuple(float(v) for v in xy))
+        edges = [(0, 1), (1, 2), (2, 3)]
+        for u, v in edges:
+            graph.add_edge(
+                u, v, distance=float(np.linalg.norm(corners[u] - corners[v]))
+            )
+        envs[name] = Environment.from_graph(
+            graph, edges, bin_size=rec.params["bin_size"], units="cm", track_width=width
+        )
+    return envs
+
+
+def _stable_ca1(rec):
+    """Positions of CA1 units with >= 100 spikes in every run epoch."""
+    run = np.asarray(rec.epochs["run"])
+    kept = [
+        k
+        for k, (train, area) in enumerate(
+            zip(rec.spike_times, rec.units["brain_region"], strict=True)
+        )
+        if area == "CA1"
+        and np.all(
+            np.searchsorted(train, run[:, 1]) - np.searchsorted(train, run[:, 0])
+            >= MIN_SPIKES
+        )
+    ]
+    return np.array(kept, dtype=int)
+
+
+def _templates(rec, envs, speed, cells, epoch):
+    """Each trajectory's linearized rate maps in one run epoch."""
+    from neurospatial import compute_spatial_rates
+
+    table = rec.trials.intervals_table()
+    start, stop = np.asarray(rec.epochs["run"])[epoch]
+    rates = {}
+    for name, (a, b) in PATHS.items():
+        rows = table[
+            (table["start_well"] == a)
+            & (table["end_well"] == b)
+            & (table["start_time"] >= start)
+            & (table["start_time"] < stop)
+        ][["start_time", "stop_time"]].to_numpy(dtype=float)
+        rates[name] = compute_spatial_rates(
+            envs[name],
+            [rec.spike_times[k] for k in cells],
+            rec.times,
+            rec.positions,
+            epochs=rows,
+            method="binned",
+            bandwidth=MAP_BANDWIDTH,
+            min_occupancy=MIN_OCCUPANCY,
+            speed=speed,
+            min_speed=MOVING,
+        )
+    return rates
+
+
+def _lab_code_p(posterior, positions, counts, rng):
+    """The line-fit p-value of the Jadhav lab's code, for one trajectory.
+
+    ``ProcessData/jds_replay_decoding_CA1_M.m`` of JadhavLab/PrefrontalRipples
+    at 72f0f3e841117c5979d0f68624ed8f4a1a17b550 (written for Shin & Jadhav
+    2024; no code of the 2019 paper is public), read for comparison and
+    reproduced here only to measure how its choices change verdicts: the
+    posterior of the bins with spikes, normalized within the trajectory;
+    10,000 samples in all, each time bin drawn in proportion to its spike
+    count and a position from its posterior; R-squared of position on bin
+    number averaged over 500 such draws; 1,500 shuffles of the order of the
+    bins with spikes, each drawn once; p the share of shuffles with a larger
+    R-squared, with no +1. Drawing the samples is drawing how many fall in
+    each time bin, then in each position bin; R-squared needs only their sums.
+
+    Parameters
+    ----------
+    posterior : ndarray, shape (n_time, n_bins)
+        The trajectory's conditional posterior.
+    positions : ndarray, shape (n_bins,)
+        Each bin's position along the trajectory, cm.
+    counts : ndarray, shape (n_time,)
+        Spikes per time bin.
+    rng : numpy.random.Generator
+
+    Returns
+    -------
+    float
+    """
+    keep = (counts > 0) & (posterior.sum(axis=1) > 0)
+    if keep.sum() < 2:
+        return 1.0
+    rows = posterior[keep] / posterior[keep].sum(axis=1, keepdims=True)
+    weights = counts[keep] / counts[keep].sum()
+    times = np.flatnonzero(keep).astype(float)
+
+    def r2(n_draws, order):
+        samples = rng.multinomial(LAB_SAMPLES, weights, size=n_draws)
+        placed = rng.multinomial(samples, rows)
+        sy, syy = placed @ positions, placed @ positions**2
+        sx, sxx = (samples * order).sum(axis=1), (samples * order**2).sum(axis=1)
+        sxy = (sy * order).sum(axis=1)
+        sy, syy = sy.sum(axis=1), syy.sum(axis=1)
+        cov = sxy - sx * sy / LAB_SAMPLES
+        spread = (sxx - sx**2 / LAB_SAMPLES) * (syy - sy**2 / LAB_SAMPLES)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return np.nan_to_num(cov**2 / spread)
+
+    observed = float(np.mean(r2(LAB_RESAMPLES, times[None, :])))
+    orders = np.array([rng.permutation(times) for _ in range(LAB_SHUFFLES)])
+    return float(np.mean(r2(LAB_SHUFFLES, orders) > observed))
+
+
+def _judge(job):
+    """SHIN_2019 on one candidate's joint decode, and the lab code's verdict."""
+    from neurospatial.decoding import decode_jointly
+    from neurospatial.replay import detect_replay
+    from neurospatial.replay.methods import SHIN_2019
+
+    envs, rates, counts, centers, seed = job
+    joint = decode_jointly(envs, counts, rates, dt=REPLAY_BIN, times=centers)
+    result = detect_replay(
+        envs,
+        joint,
+        centers,
+        replay_method=SHIN_2019,
+        spike_counts=counts,
+        rng=np.random.default_rng(seed),
+    )
+    rng = np.random.default_rng([*seed, 72])
+    lab = [
+        _lab_code_p(
+            np.asarray(joint.conditional[name].posterior),
+            env.to_linear(env.bin_centers),
+            counts.sum(axis=1),
+            rng,
+        )
+        for name, env in envs.items()
+    ]
+    return bool(result.is_replay), min(lab) < SHIN_2019.alpha
+
+
+def _per_visit(session, *, workers=6):
+    """Shin et al. 2019's per-visit counts on one rat, as the worked result defines them.
+
+    Returns
+    -------
+    dict
+        ``visits`` (the correct trials' visits, with ``swrs``, ``candidates``
+        and ``replay`` counted by event start), ``n_place_cells`` per run
+        epoch, and the session's ``n_swrs``, ``n_candidates`` and ``n_judged``.
+    """
+    import multiprocessing
+    import warnings
+    from concurrent.futures import ProcessPoolExecutor
+
+    import ripple_detection as rd
+    from ripple_detection.literature_methods import Recording as Signals
+    from ripple_detection.literature_methods import bounds, shin_2019
+
+    from neurospatial.behavior import compute_speed
+    from neurospatial.datasets import load
+    from neurospatial.datasets import shin_2019 as loader
+    from neurospatial.datasets._load import _session_entry, _stream_url
+    from neurospatial.datasets._ripple import event_rows, spike_counts
+
+    rec = load("shin_2019", session)
+    speed = np.asarray(
+        compute_speed(
+            rec.times, rec.positions, smooth_window=rec.params["speed_smooth_window"]
+        )
+    )
+    visits = _well_visits(rec, speed)
+    visits = visits[visits["correct"] & visits["entry"].notna()].reset_index(drop=True)
+    envs = _trajectory_envs(rec)
+    stable = _stable_ca1(rec)
+    ca1 = rec.units[rec.units["brain_region"] == "CA1"]
+    channels = tuple(f"tetrode{k} Ref ON" for k in sorted(set(ca1["tetrode"])))
+    run = np.asarray(rec.epochs["run"])
+    windows = loader._read_lfp_windows(
+        _stream_url(_session_entry("shin_2019", session)), channels, run
+    )
+    swrs, candidates, unbounded, jobs, n_place = [], [], [], [], []
+    for epoch, (samples, times) in enumerate(windows):
+        rates = _templates(rec, envs, speed, stable, epoch)
+        peak = np.nanmax(
+            [np.nanmax(r.firing_rates, axis=1) for r in rates.values()], axis=0
+        )
+        place = np.flatnonzero(peak >= PLACE_PEAK)
+        n_place.append(int(place.size))
+        counts = spike_counts(
+            [rec.spike_times[k] for k in stable], times, sampling_rate=loader.LFP_RATE
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            signals = Signals.from_arrays(
+                times,
+                loader.LFP_RATE,
+                lfps=samples,
+                multiunit=counts,
+                speed=np.interp(times, rec.times, speed),
+                place_cells=place,
+            )
+            found = bounds(shin_2019(signals))
+            chosen = bounds(shin_2019(signals, stage="decoding_candidates"))
+            # The paper states no minimum time above 3 SD; the detector's 15 ms
+            # is Karlsson & Frank 2009's.
+            unbounded.append(
+                bounds(
+                    rd.Karlsson_ripple_detector(
+                        signals.time,
+                        signals.filtered((150.0, 250.0)),
+                        signals.speed,
+                        signals.fs,
+                        speed_threshold=IMMOBILE,
+                        minimum_duration=0.0,
+                    )
+                )
+            )
+        del signals, counts
+        swrs.append(found)
+        candidates.append(chosen)
+        inside = np.zeros(len(chosen), dtype=bool)
+        mine = visits[visits["epoch"] == epoch]
+        for entry, leave in zip(mine["entry"], mine["exit"], strict=True):
+            inside |= (chosen[:, 0] >= entry) & (chosen[:, 0] < leave)
+        place_rates = _templates(rec, envs, speed, stable[place], epoch)
+        trains = [rec.spike_times[stable[k]] for k in place]
+        for index, (start, stop) in enumerate(chosen[inside]):
+            spikes, centers = event_rows(
+                trains, start, stop, time_bin=REPLAY_BIN, step=REPLAY_BIN
+            )
+            jobs.append(
+                (envs, place_rates, spikes, centers, [SEED, epoch, index], start)
+            )
+    with ProcessPoolExecutor(
+        workers, mp_context=multiprocessing.get_context("fork")
+    ) as pool:
+        verdicts = list(pool.map(_judge, [job[:5] for job in jobs]))
+    starts = np.array([job[5] for job in jobs])
+    ours = np.array([verdict[0] for verdict in verdicts], dtype=bool)
+    lab = np.array([verdict[1] for verdict in verdicts], dtype=bool)
+
+    def count(starts):
+        return [
+            int(np.sum((starts >= a) & (starts < b)))
+            for a, b in zip(visits["entry"], visits["exit"], strict=True)
+        ]
+
+    visits["swrs"] = count(np.concatenate(swrs)[:, 0])
+    visits["candidates"] = count(np.concatenate(candidates)[:, 0])
+    visits["replay"] = count(starts[ours])
+    visits["replay_lab_code"] = count(starts[lab])
+    visits["swrs_no_minimum"] = count(np.concatenate(unbounded)[:, 0])
+    return {
+        "visits": visits,
+        "ours_only": int(np.sum(ours & ~lab)),
+        "lab_code_only": int(np.sum(lab & ~ours)),
+        "n_place_cells": n_place,
+        "n_swrs": int(sum(len(e) for e in swrs)),
+        "n_candidates": int(sum(len(e) for e in candidates)),
+        "n_judged": len(jobs),
+        "swr_rows": np.concatenate(swrs),
+        "rec": rec,
+    }
+
+
+def _swr_modulation(rec, swrs):
+    """Each unit's rate inside the SWRs over its rate in the run epochs."""
+    run = np.asarray(rec.epochs["run"])
+    inside = float(np.sum(swrs[:, 1] - swrs[:, 0]))
+    total = float(np.sum(run[:, 1] - run[:, 0]))
+
+    def spikes_in(train, rows):
+        return int(
+            np.sum(
+                np.searchsorted(train, rows[:, 1]) - np.searchsorted(train, rows[:, 0])
+            )
+        )
+
+    return np.array(
+        [
+            (spikes_in(train, swrs) / inside)
+            / max(spikes_in(train, run) / total, 1e-12)
+            for train in rec.spike_times
+        ]
+    )
+
+
+# The files' devices carry the empty 'manufacturer' field pynwb now deprecates.
+NWB_DEVICE_DEPRECATION = pytest.mark.filterwarnings(
+    "ignore:The 'manufacturer' field is deprecated:DeprecationWarning"
+)
+
+
+@pytest.mark.realdata
+@NWB_DEVICE_DEPRECATION
+def test_loads_default_session(session_entry, assert_default_session):
+    """JS14 by byte range: 72 units by tetrode, 298 trials, 8 run epochs, the W-maze."""
+    from neurospatial.datasets import load
+
+    rec = load("shin_2019")
+    assert_default_session(rec, session_entry("shin_2019"))
+    assert rec.provenance.url.startswith("https://api.dandiarchive.org/")
+    assert rec.units["brain_region"].value_counts().to_dict() == {"CA1": 52, "PFC": 20}
+    assert rec.times.size == 501_461
+    assert rec.sampling_rate == pytest.approx(32.5733, rel=1e-5)
+    assert len(rec.trials) == 298
+    assert int(rec.trials.intervals_table()["correct"].sum()) == 258
+    assert rec.epochs["run"].shape == (8, 2)
+    assert rec.epochs["rest"].shape == (9, 2)
+    assert len(rec.lfp.channels) == 62
+    text = {c.text.split(":")[0]: c for c in rec.conversions}
+    assert "a median 1.005 times that speed" in text["speed"].evidence
+    assert "96.3% of samples at the paper's 4 cm/s" in text["speed"].evidence
+    assert "Read as rows here: CA1 31, PFC 41" in text["units"].evidence
+    assert "a median 16.0 cm/s" in text["trials"].evidence
+    assert "a median 18.2 cm from the end of its end well's arm" in (
+        text["trials"].evidence
+    )
+    assert "track_width 34.7 cm" in text["environment"].text
+    assert any("for 35 of the 72 units here" in t for t in rec.watch_outs)
+    assert any("75% of the tracked samples of the rest" in t for t in rec.watch_outs)

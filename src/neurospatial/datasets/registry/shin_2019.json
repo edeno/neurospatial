@@ -51,10 +51,10 @@
       "asset_id": "4b7c7959-04b3-4817-8f96-1af6f41888c1",
       "sha256": "6b8cf8ce3bbe34374e10a8a310592d1ae9762b20554569bc3c45fcfecdcf67b6",
       "size_bytes": 28291364968,
-      "verified": false,
+      "verified": true,
       "default": true,
-      "n_units": null,
-      "verification": ""
+      "n_units": 72,
+      "verification": "Streamed and read against the file and Shin et al. 2019 (2026-11-11): position columns x, y and velocity by the series' comments; the units' electrodes values are tetrode numbers (52 CA1 and 20 PFC units, at least the paper's 37 CA1 place cells and 12 PFC cells of JS14, Figure S1F-G; CA1 units fire a median 2.2 times their run rate in SWRs, PFC units 0.75 times); Ref OFF minus Ref ON equals tetrode 14's signal on every CA1 tetrode and tetrode 1's on every PFC tetrode; acquisition/ElectricalSeries equals the LFP at 8 random blocks; trials stop just after the rat leaves its end well (speed rising, 18 cm from the arm's end); 258 correct trials; the fitted W-maze drawn over the run samples"
     },
     {
       "session": "sub-JDS-SingleDay-JS15",

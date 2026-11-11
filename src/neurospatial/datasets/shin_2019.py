@@ -170,10 +170,26 @@ _EDGES = (
 
 #: Findings computed from the data (by the checks or this loader) that each
 #: verified session must report, as patterns searched for in its watch_outs.
-EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {}
+EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
+    "sub-JDS-SingleDay-JS14": (
+        r"for 35 of the 72 units here the wrong brain area",
+        r"75% of the tracked samples of the rest epochs fall in a bin",
+        r"the sampling rate is 32\.57\d* Hz",
+        r"runs of 11 or more identical position samples",
+        r"lie outside the declared environment",
+    ),
+}
 
 #: Pitfalls of each session checked by hand, with their evidence.
-WATCH_OUTS: dict[str, tuple[str, ...]] = {}
+WATCH_OUTS: dict[str, tuple[str, ...]] = {
+    "sub-JDS-SingleDay-JS14": (
+        "The CA1 tetrodes are referenced to tetrode 14 and the PFC tetrodes to "
+        "tetrode 1: on every CA1 tetrode, Ref OFF minus Ref ON is tetrode 14's "
+        "signal (correlation 1.0), and on every PFC tetrode tetrode 1's. Tetrodes "
+        "14 and 1 are labelled CA1 and PFC but are the references, and no unit is "
+        "on them.",
+    ),
+}
 
 _LINK = (
     "The dandiset names no paper. Its link to Shin, Tang & Jadhav 2019 is "
