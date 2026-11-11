@@ -40,7 +40,7 @@ def main(work: Path, out: Path) -> None:
         sessions[session] = info
     out.mkdir(parents=True, exist_ok=True)
     with open(out / "authors_octave_sequences.csv", "w", newline="") as f:
-        w = csv.writer(f)
+        w = csv.writer(f, lineterminator="\n")
         w.writerow(["session", "side", "start_s", "end_s"])
         w.writerows(rows)
     (out / "authors_octave_sessions.json").write_text(json.dumps(sessions, indent=1) + "\n")
