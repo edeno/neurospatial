@@ -5413,6 +5413,15 @@ SHIN_2019 = dataclasses.replace(
         "the share of shuffles with a larger R² comes from Karlsson & Frank "
         "(2009), which it cites, and the lineage code. Here (k + 1) / (n + "
         "1), the same verdict at alpha 0.05 with 1,500 shuffles.",
+        "Measured on Shin et al.'s own data (DANDI 000978, rat JS14, the "
+        "shin_2019 dataset's worked result): of 735 candidate events at the "
+        "reward wells, this recipe calls 180 replay and the lineage code's "
+        "p-value, run on the same joint decodes, 162; 36 are replay only "
+        "here and 18 only there. The causes are its sampling (10,000 samples "
+        "in all, split by spike count; R² averaged over 500 draws; each "
+        "shuffle drawn once) and its p-value without +1, taken together: the "
+        "counts are not split among them. "
+        "tests/datasets/test_shin_2019.py pins both counts.",
     ),
 )
 
