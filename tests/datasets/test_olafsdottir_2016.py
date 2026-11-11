@@ -234,6 +234,45 @@ def test_spike_times_are_on_the_days_clock_and_units_join_the_trials(day):
     assert (rec.units.loc[["T1_c1", "T1_c2"], "n_spikes_rest"] == 0).all()
 
 
+def test_a_zero_filled_rest_file_keeps_its_spikes_before_and_warns(day, tmp_path):
+    """Rest tetrode 9 zero from inside spike 21 to its end, data_end's place included.
+
+    The units keep the rest spikes before it, the cut is read for the
+    header's 40 spikes, and the warning and watch-out name the units that
+    lose spikes and the span T9 has none.
+    """
+    import shutil
+
+    from neurospatial.datasets._axona import read_header
+
+    _, entry, folder, spikes, _, _, _ = day
+    copy = tmp_path / folder.name
+    shutil.copytree(folder, copy)
+    rest_file = copy / f"{REST}.9"
+    whole = rest_file.read_bytes()
+    _, offset = read_header(rest_file)
+    zero_from = offset + 20 * 216 + 3
+    rest_file.write_bytes(whole[:zero_from] + bytes(len(whole) - zero_from))
+    stamps, _, ids = spikes[REST, 9]
+    losing = sorted({int(c) for c in ids[20:] if c > 0})
+    with pytest.warns(
+        UserWarning, match=rf"{REST}\.9 holds 20 of the 40 spikes"
+    ) as caught:
+        rec = olafsdottir_2016.load_session(entry, copy)
+    note = str(caught[0].message)
+    assert ", ".join(f"T9_c{c}" for c in losing) in note
+    assert (
+        f"T9 has no detected spikes from {120 + stamps[19] / 96000:.1f} to 150.0 s"
+        in note
+    )
+    assert note in rec.watch_outs
+    train = rec.spike_times[list(rec.units.index).index("T9_c2")]
+    rest = train[train >= 120.0]
+    np.testing.assert_allclose(rest, 120.0 + stamps[:20][ids[:20] == 2] / 96000)
+    marks = rec.marks.times[rec.marks.electrodes.index("T9")]
+    assert np.sum(marks >= 120.0) == 20
+
+
 def test_epochs_place_the_rest_by_its_start_time(day):
     rec = day[0]
     np.testing.assert_array_equal(rec.epochs["track"], [[0.0, 60.0]])
@@ -902,14 +941,22 @@ DAYS = (
 )
 
 
-#: Deposit days no load can read: R2192-2014-10-01's rest tetrode 4 file is
-#: zeros from spike 18,053 on, 45,749 of its 63,801 (the registry's SHA-256: the
-#: deposit's own file), and the reader refuses it.
-UNREADABLE = {"R2192-2014-10-01": "20141001_R2192_sleepPOST.4 is zero-filled"}
-#: Checks a day fails for reasons the 2017 analysis does not touch: R2335's
-#: second open field (17:26, five hours after the first) lies past the span
-#: the clock check takes as the recording's.
-ACCEPTED_2017 = {"R2335-2015-10-26": ("clock",)}
+#: Days whose load warns of spikes lost from a deposit file: R2192-2014-10-01's
+#: rest tetrode 4 file is zeros from inside spike 18,052 to its end (the
+#: registry's SHA-256: the deposit's own file).
+LOST_SPIKES = {
+    "R2192-2014-10-01": r"20141001_R2192_sleepPOST\.4 holds 18,051 of the 63,801"
+}
+
+
+def _load_day(day):
+    """``load`` of a deposit day, expecting its lost-spikes warning if it has one."""
+    from neurospatial.datasets import load
+
+    if day not in LOST_SPIKES:
+        return load("olafsdottir_2016", day)
+    with pytest.warns(UserWarning, match=LOST_SPIKES[day]):
+        return load("olafsdottir_2016", day)
 
 
 def _along_track(rec, points):
@@ -1106,13 +1153,7 @@ def _reactivations(rec, cells, maps, events, *, jointly=False):
 
 def _day_2017(session):
     """The 2017 analysis of one deposit day, as small arrays and counts."""
-    from neurospatial.datasets import load
-
-    rec = load(
-        "olafsdottir_2016",
-        session,
-        accept_failed_checks=ACCEPTED_2017.get(session, ()),
-    )
+    rec = _load_day(session)
     ca1, cells = _place_cells(rec, RUN_SPEED_2017)
     maps = _rate_maps(rec, cells, RUN_SPEED_2017)
     out = {
@@ -1197,12 +1238,13 @@ def _congruence(days, key):
     return out
 
 
-#: Measured on every readable deposit day by the analysis fixed above: its
-#: place cells and median running decoding error, cm. Every one is within
-#: 30 cm, so all 9 enter.
+#: Measured on every deposit day by the analysis fixed above: its place cells
+#: and median running decoding error, cm. Every one is within 30 cm, so all 10
+#: enter.
 MEASURED_DAYS_2017 = {
     "R2142-2014-08-06": (28, 13.87),
     "R2192-2014-09-17": (67, 5.15),
+    "R2192-2014-10-01": (70, 5.37),
     "R2217-2014-12-13": (55, 6.97),
     "R2217-2014-12-18": (36, 11.44),
     "R2335-2015-10-26": (26, 21.72),
@@ -1215,18 +1257,18 @@ MEASURED_DAYS_2017 = {
 #: preset (p < 0.025), those the paper's rule calls replay (a score above the
 #: 97.5th percentile of 100 shuffles: at most 2 as high, p <= 3 / 101), and the
 #: putative events.
-MEASURED_TRAJECTORY_2017 = {"engaged": (14, 18, 51), "disengaged": (77, 91, 257)}
+MEASURED_TRAJECTORY_2017 = {"engaged": (19, 24, 63), "disengaged": (80, 94, 262)}
 #: Pooled over the days, per section: (congruent, events, chance, share of
 #: resamples above chance), and the share of resampled differences above 0.
 MEASURED_CONGRUENCE_2017 = {
-    "engaged": (111, 241, 0.5078, 0.067),
-    "disengaged": (509, 976, 0.4894, 0.9781),
-    "difference": 0.0456,
+    "engaged": (124, 282, 0.5138, 0.008),
+    "disengaged": (515, 994, 0.4913, 0.9537),
+    "difference": 0.0104,
 }
 MEASURED_CONGRUENCE_JOINT_2017 = {
-    "engaged": (149, 241, 0.5098, 0.9995),
-    "disengaged": (591, 976, 0.528, 1.0),
-    "difference": 0.6517,
+    "engaged": (179, 282, 0.5009, 1.0),
+    "disengaged": (601, 994, 0.5256, 1.0),
+    "difference": 0.8141,
 }
 #: On the default day's runs: (bins naming the running direction, bins with
 #: spikes), each direction decoded on its own and both decoded jointly.
@@ -1235,22 +1277,45 @@ DIRECTION_READ_2017 = ((1315, 2564), (2084, 2564))
 
 @pytest.fixture(scope="module")
 def days_2017():
-    """The 2017 analysis of every readable deposit day (9 loaded, 3.9 GB cached)."""
+    """The 2017 analysis of every deposit day (10 loaded)."""
     pytest.importorskip("ripple_detection.literature_methods")
-    return {day: _day_2017(day) for day in DAYS if day not in UNREADABLE}
+    return {day: _day_2017(day) for day in DAYS}
 
 
 @pytest.mark.realdata
-def test_a_deposit_file_zero_filled_leaves_one_day_out():
-    """R2192-2014-10-01's rest tetrode 4 file is zeros in its last 45,749 of 63,801 spikes.
+def test_a_deposit_file_zero_filled_loses_unsorted_spikes_only():
+    """R2192-2014-10-01's rest tetrode 4 file is zeros from inside spike 18,052 on.
 
-    Its SHA-256 is the registry's, so the deposit holds it so; the reader
-    refuses the file, so the day cannot be loaded and enters no 2017 result.
+    Its SHA-256 is the registry's, so the deposit holds it so. The zeros
+    begin on a 4,096-byte boundary and cut one spike in half: storage lost the
+    bytes. Tetrode 4 is sorted in no trial of the day, so no unit loses
+    spikes; the marks of T4 stop 45,749 spikes early, which the watch-out says.
     """
-    from neurospatial.datasets import load
+    rec = _load_day("R2192-2014-10-01")
+    assert rec.failed_checks == ()
+    assert not any(name.startswith("T4_") for name in rec.units.index)
+    marks = rec.marks.times[rec.marks.electrodes.index("T4")]
+    rest = rec.epochs["rest"][0]
+    in_rest = marks[marks >= rest[0]]
+    assert (in_rest.size, round(float(in_rest[-1]), 1)) == (18_051, 3410.0)
+    assert any("T4 has no detected spikes from 3410.0 to 7152.0 s" in w
+               for w in rec.watch_outs)  # fmt: skip
 
-    with pytest.raises(ValueError, match=r"20141001_R2192_sleepPOST\.4: the header"):
-        load("olafsdottir_2016", "R2192-2014-10-01")
+
+@pytest.mark.realdata
+def test_unsorted_spikes_put_r2335s_second_open_field_on_the_clock():
+    """R2335-2015-10-26's second open field, five hours on, has no sorted unit.
+
+    Its spikes are in rec.marks only; the clock check counts them, so the day
+    loads without an accepted failure.
+    """
+    rec = _load_day("R2335-2015-10-26")
+    assert rec.failed_checks == ()
+    start, stop = rec.epochs["open_field_2"][0]
+    assert max(float(train.max()) for train in rec.spike_times if train.size) < start
+    marks = np.concatenate(rec.marks.times)
+    inside = (marks >= start) & (marks <= stop)
+    assert inside.sum() > 0
 
 
 @pytest.mark.realdata

@@ -137,6 +137,28 @@ def _data(path: str | os.PathLike[str], offset: int, n_bytes: int) -> bytes:
     return data[:n_bytes]
 
 
+def _records_before_zeros(
+    path: str | os.PathLike[str], offset: int, n_records: int, record_bytes: int
+) -> bytes | None:
+    """The whole records before a zero-filled end, or None if the file has none.
+
+    A zero-filled end: the file is as long as ``n_records`` and its end marker
+    give, and its bytes are zero from some point on, the marker's included;
+    the bytes from there were lost and the file filled to its length. The
+    record the zeros begin inside is left out with the lost ones, since its
+    zero bytes cannot be told from lost ones.
+    """
+    n_bytes = n_records * record_bytes
+    with Path(path).open("rb") as stream:
+        stream.seek(offset)
+        data = stream.read(n_bytes + len(DATA_END))
+    if len(data) != n_bytes + len(DATA_END) or any(data[n_bytes:]):
+        return None
+    nonzero = np.flatnonzero(np.frombuffer(data, dtype=np.uint8))
+    zero_from = int(nonzero[-1]) + 1 if nonzero.size else 0
+    return data[: zero_from // record_bytes * record_bytes]
+
+
 class AxonaSpikes(NamedTuple):
     """What a tetrode file stores for each detected spike.
 
@@ -150,12 +172,17 @@ class AxonaSpikes(NamedTuple):
     sample_rate : float
         The waveforms' sampling rate, Hz.
     header : dict of str to str
+    n_lost : int
+        Spikes the header counts that the file no longer holds: those from
+        where a zero-filled end begins (0 for a whole file). The spikes kept
+        are the first ``num_spikes - n_lost``.
     """
 
     times: NDArray[np.float64]
     waveforms: NDArray[np.int8]
     sample_rate: float
     header: dict[str, str]
+    n_lost: int = 0
 
 
 def read_tetrode(path: str | os.PathLike[str]) -> AxonaSpikes:
@@ -164,6 +191,12 @@ def read_tetrode(path: str | os.PathLike[str]) -> AxonaSpikes:
     Each spike is four blocks, one per channel in order, of a 4-byte
     big-endian timestamp and ``samples_per_spike`` signed bytes (the dacqUSB
     document: "216 bytes per spike, structured as 54 bytes per channel").
+
+    A file of the stated length whose bytes are zero from some point to its
+    end, where ``data_end`` should be, lost those bytes: its spikes wholly
+    before the first zero are kept, and ``n_lost`` counts the rest. The spike
+    the zeros begin inside is among the lost, since its zero bytes cannot be
+    told from lost ones.
 
     Parameters
     ----------
@@ -178,8 +211,9 @@ def read_tetrode(path: str | os.PathLike[str]) -> AxonaSpikes:
     ValueError
         If the header does not describe that layout (4 channels, 4-byte
         timestamps, 1-byte samples, ``spike_format t,ch1,t,ch2,t,ch3,t,ch4``),
-        the data do not hold ``num_spikes`` spikes before ``data_end``, or the
-        four channels of a spike carry different timestamps.
+        the data do not hold ``num_spikes`` spikes before ``data_end`` and are
+        not zero-filled from some point to the file's end, or the four
+        channels of a spike carry different timestamps.
     """
     header, offset = read_header(path)
     layout = {
@@ -199,7 +233,16 @@ def read_tetrode(path: str | os.PathLike[str]) -> AxonaSpikes:
     n_spikes = int(_number(header, "num_spikes", path))
     n_samples = int(_number(header, "samples_per_spike", path))
     block = np.dtype([("t", ">i4"), ("samples", "i1", (n_samples,))])
-    data = _data(path, offset, n_spikes * CHANNELS * block.itemsize)
+    spike_bytes = CHANNELS * block.itemsize
+    n_stated = n_spikes
+    try:
+        data = _data(path, offset, n_stated * spike_bytes)
+    except ValueError:
+        kept = _records_before_zeros(path, offset, n_stated, spike_bytes)
+        if kept is None:
+            raise
+        data = kept
+        n_spikes = len(kept) // spike_bytes
     records = np.frombuffer(data, dtype=block).reshape(n_spikes, CHANNELS)
     stamps = records["t"]
     if not np.array_equal(stamps, np.repeat(stamps[:, :1], CHANNELS, axis=1)):
@@ -214,6 +257,7 @@ def read_tetrode(path: str | os.PathLike[str]) -> AxonaSpikes:
         waveforms=np.ascontiguousarray(records["samples"]),
         sample_rate=_number(header, "sample_rate", path),
         header=header,
+        n_lost=n_stated - n_spikes,
     )
 
 

@@ -110,6 +110,25 @@ def test_tetrode_without_data_end_is_refused(tmp_path):
         read_tetrode(path)
 
 
+def test_tetrode_zero_filled_from_a_spike_keeps_the_spikes_before(tetrode, tmp_path):
+    """Bytes zero from inside spike 2 to the end, data_end's place included.
+
+    The file keeps the header's length, as when lost blocks are zero-filled:
+    spike 1 is read, and spike 2, cut inside, is lost with spike 3.
+    """
+    source, waves, stamps = tetrode
+    whole = source.read_bytes()
+    _, offset = read_header(source)
+    zero_from = offset + 216 + 100  # inside spike 2's second channel
+    path = tmp_path / "zero_filled.10"
+    path.write_bytes(whole[:zero_from] + bytes(len(whole) - zero_from))
+    spikes = read_tetrode(path)
+    assert spikes.n_lost == 2
+    np.testing.assert_array_equal(spikes.times, [stamps[0] / 96_000])
+    np.testing.assert_array_equal(spikes.waveforms, waves[:1])
+    assert read_tetrode(source).n_lost == 0
+
+
 def test_tetrode_in_another_layout_is_refused(tmp_path):
     lines = [
         line.replace("bytes_per_sample 1", "bytes_per_sample 2")

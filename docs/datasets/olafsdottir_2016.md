@@ -115,14 +115,18 @@ Neo's `axonarawio.py` (BSD-3).
 - **Which paper session.** The paper's Supplementary Table 1 numbers each rat's
   sessions without dates. The deposit has 10 days for the paper's 11 sessions;
   R2192 has 2 of its 3, and which is unknown. See [Sessions](#sessions-and-the-papers-table).
-- **`R2192-2014-10-01` cannot be loaded.** Its rest file for tetrode 4,
-  `20141001_R2192_sleepPOST.4`, is zeros in its last 45,749 of 63,801 spikes and
-  its end marker, in the deposit itself (its SHA-256 is the registry's), and the
-  reader refuses it.
-- **`R2335-2015-10-26` fails the clock check.** Its second open field
-  (`screening2`) starts at 17:26, five hours after the first, past the span the
-  check takes as the recording's. `load(..., accept_failed_checks=("clock",))`
-  loads it; the 2017 analysis below uses only its track.
+- **`R2192-2014-10-01` lost spikes of tetrode 4 in the rest.** Its rest file
+  `20141001_R2192_sleepPOST.4` is zeros from inside spike 18,052 of the 63,801
+  its header counts to the end, its end marker included, in the deposit itself
+  (its SHA-256 is the registry's). The zeros begin on a 4,096-byte boundary and
+  cut a spike in half, so the bytes were lost in storage. The load keeps the
+  18,051 whole spikes before them and warns. Tetrode 4 is sorted in no trial of
+  the day, so no unit loses spikes, but `rec.marks` has no T4 spikes from
+  3,410 s to the rest's end at 7,152 s: leave T4 out of that span in a
+  clusterless decode, or it reads the lost spikes as no firing.
+- **`R2335-2015-10-26`'s second open field has no sorted units.** It
+  (`screening2`) starts at 17:26, five hours after the first, and no tetrode has
+  a `.cut` for it, so its spikes are in `rec.marks` only.
 - **Files the loader leaves out.** `.clu` files (the README: superseded by the
   `.cut` files), `.eeg` (the 250 Hz copy of `.egf`), `.inp`, the `*_info.mat`
   files, and three cut files named for no tetrode: `20140806_R2142_sleepPOST.cut`,
@@ -323,9 +327,11 @@ Fixed in writing before any candidate event on a track was detected or judged
   decoding the running rat in 500 ms bins is at most 30 cm. Here the place
   cells' outbound and inbound maps over all runs decode each run with its own
   direction's maps; the error is the distance along the track from the most
-  probable bin to the rat, in bins where it runs faster than 10 cm/s. All 9
-  readable days pass, at 5.2 to 21.7 cm. The tenth, `R2192-2014-10-01`, cannot
-  be loaded (see Watch out).
+  probable bin to the rat, in bins where it runs faster than 10 cm/s. All 10
+  days pass, at 5.2 to 21.7 cm. (`R2192-2014-10-01` entered after the first
+  run, once the reader kept the spikes before its zero-filled file: the rule
+  was every day the deposit's files can be read for, so the analysis did not
+  change.)
   The paper's other exclusion (R2336's day 4, headstages disconnected in the
   rest) cannot be applied: the deposit does not number days, and neither R2336
   rest is short.
@@ -358,14 +364,14 @@ Fixed in writing before any candidate event on a track was detected or judged
 
 ### Results
 
-**Criterion A is met: 91 of 308 trajectory events (29.5%) are judged replay**,
+**Criterion A is met: 99 of 325 trajectory events (30.5%) are judged replay**,
 inside 28.1% to 48.1%, though near its lower edge.
 
-| Pooled over 9 days | Engaged | Disengaged | Pooled | Paper |
+| Pooled over 10 days | Engaged | Disengaged | Pooled | Paper |
 | --- | --- | --- | --- | --- |
-| Putative trajectory events | 51 | 257 | 308 | 404, 943, 1,347 |
-| Judged replay by `OLAFSDOTTIR_2017` | 14 (27.5%) | 77 (30.0%) | 91 (29.5%) | 36.88%, 38.60%, 38.1% |
-| By the paper's rule, at most 2 of 100 shuffles as high | 18 (35.3%) | 91 (35.4%) | 109 (35.4%) | |
+| Putative trajectory events | 63 | 262 | 325 | 404, 943, 1,347 |
+| Judged replay by `OLAFSDOTTIR_2017` | 19 (30.2%) | 80 (30.5%) | 99 (30.5%) | 36.88%, 38.60%, 38.1% |
+| By the paper's rule, at most 2 of 100 shuffles as high | 24 (38.1%) | 94 (35.9%) | 118 (36.3%) | |
 
 As in the paper, the engaged and disengaged shares are close. Two differences
 from the paper are measured here:
@@ -373,8 +379,8 @@ from the paper are measured here:
 - **The threshold.** The paper calls an event replay when its score exceeds the
   97.5th percentile of its 100 shuffles, which allows 2 shuffles as high;
   `OLAFSDOTTIR_2017` takes p = (k + 1) / (n + 1) < 0.025, which allows 1. The
-  paper's rule calls 18 more events replay, 35.4% of the 308.
-- **Fewer events.** 308 putative trajectory events on 9 days, against the
+  paper's rule calls 19 more events replay, 36.3% of the 325.
+- **Fewer events.** 325 putative trajectory events on 10 days, against the
   paper's 1,347 on 24 sessions. The rat must stay below 3 cm/s through an event,
   and by `compute_speed`'s default (0.1 s smoothing) the head LED is that slow
   in 10.6% of the default day's corner stops, since the head moves while the
@@ -382,9 +388,9 @@ from the paper are measured here:
   estimated speed.
 
 **Criterion B is not met.** Decoded as the Methods describe, engaged
-reactivations are congruent in 111 of 241 (46.1%), against a cell-ID shuffle
-chance of 50.8% (6.7% of resamples above chance), and disengaged ones in 509 of
-976 (52.2%, chance 48.9%).
+reactivations are congruent in 124 of 282 (44.0%), against a cell-ID shuffle
+chance of 51.4% (0.8% of resamples above chance), and disengaged ones in 515 of
+994 (51.8%, chance 49.1%).
 
 The cause is the decode, not the data. Each direction's posterior sums to 1 on
 its own, so comparing arms across the two cannot say which direction the spikes
@@ -396,18 +402,18 @@ run:
 
 | Reactivation events, pooled | Engaged | Disengaged |
 | --- | --- | --- |
-| Congruent | 149 of 241 (61.8%) | 591 of 976 (60.6%) |
-| Cell-ID shuffle chance | 51.0% | 52.8% |
-| Resamples above chance | 99.95% | 100% |
+| Congruent | 179 of 282 (63.5%) | 601 of 994 (60.5%) |
+| Cell-ID shuffle chance | 50.1% | 52.6% |
+| Resamples above chance | 100% | 100% |
 | The paper | 62.26% | 52.19% |
 
 The engaged share matches the paper's, but disengaged events are as congruent
-(65.2% of resampled engaged-minus-disengaged differences above 0), where the
+(81.4% of resampled engaged-minus-disengaged differences above 0), where the
 paper found no bias. Whether the paper decoded the two directions together is
 not stated; its Methods say "two posterior probability matrices were generated
 for each event".
 
-The 2017 tests load the 9 days and take about 2 minutes and 6.6 GB of memory.
+The 2017 tests load the 10 days and take about 3 minutes.
 
 `test_2017_every_day_enters_by_its_decoding_error`,
 `test_2017_worked_result_share_of_trajectory_events_judged_replay`,

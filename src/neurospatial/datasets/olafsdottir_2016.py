@@ -79,6 +79,7 @@ from __future__ import annotations
 import functools
 import os
 import re
+import warnings
 from collections.abc import Mapping
 from datetime import datetime
 from itertools import pairwise
@@ -344,18 +345,18 @@ AWAKE_RESULT: dict[str, Any] = {
         "38.1% pooled: 149 of 404 engaged and 364 of 943 disengaged (404 and 943 "
         "inferred: the only counts that give 36.88% and 38.60% to the hundredth)"
     ),
-    "ours": 0.295,
+    "ours": 0.305,
     "criterion": (
-        "met. 91 of 308 putative trajectory events (29.5%) pooled over the 9 "
-        "readable deposit days are judged replay, and the criterion, fixed in "
-        "writing before any track candidate was detected, asks for 28.1% to "
-        "48.1%, within 10 points of the paper's pooled 38.1%. Engaged 14 of 51 "
-        "(27.5%), disengaged 77 of 257 (30.0%)"
+        "met. 99 of 325 putative trajectory events (30.5%) pooled over the 10 "
+        "deposit days are judged replay, and the criterion, fixed in writing "
+        "before any track candidate was detected, asks for 28.1% to 48.1%, "
+        "within 10 points of the paper's pooled 38.1%. Engaged 19 of 63 "
+        "(30.2%), disengaged 80 of 262 (30.5%)"
     ),
     "parameters": (
-        "every readable deposit day (the paper's inclusion, a median running "
-        "decoding error of 30 cm or less in 500 ms bins, passes all 9: 5.2 to "
-        "21.7 cm). Place cells: CA1 units with a field of 20 cm or more above "
+        "every deposit day (the paper's inclusion, a median running decoding "
+        "error of 30 cm or less in 500 ms bins, passes all 10: 5.2 to 21.7 "
+        "cm). Place cells: CA1 units with a field of 20 cm or more above "
         "their mean track rate and a peak above 1 Hz in the outbound or inbound "
         "map (2 cm bins, above 10 cm/s, Gaussian sigma 10 cm, ends and corners "
         "left out), mean rate 5 Hz or less. Candidates: "
@@ -369,19 +370,18 @@ AWAKE_RESULT: dict[str, Any] = {
     ),
     "unmatched": (
         "the sessions: the paper lists none of its 24, so that these days are "
-        "among them is inferred from the rat IDs; the deposit's R2192-2014-10-01 "
-        "cannot be read (a rest tetrode file zero-filled), and the paper's own "
-        "exclusion of R2336's day 4 cannot be applied",
+        "among them is inferred from the rat IDs, and the paper's own exclusion "
+        "of R2336's day 4 cannot be applied",
         "the threshold: the paper calls replay a score above the 97.5th "
         "percentile of 100 shuffles, at most 2 as high; OLAFSDOTTIR_2017 takes "
-        "p = (k + 1) / (n + 1) < 0.025, at most 1. By the paper's rule 109 of "
-        "308 (35.4%) are replay: engaged 18 of 51, disengaged 91 of 257",
+        "p = (k + 1) / (n + 1) < 0.025, at most 1. By the paper's rule 118 of "
+        "325 (36.3%) are replay: engaged 24 of 63, disengaged 94 of 262",
         "the corner stops: the paper gives no distance from a corner; here "
         "within 20 cm along the track until 40 cm away, chosen on the default "
         "day's slow samples before any candidate was detected",
         "the speed below 3 cm/s: the paper does not say how speed was "
         "estimated; compute_speed's 0.1 s smoothing of the head LED leaves "
-        "fewer events than the paper's (308 putative trajectory events on 9 "
+        "fewer events than the paper's (325 putative trajectory events on 10 "
         "days, against 1,347 on 24 sessions)",
     ),
     "attempted": None,
@@ -405,18 +405,18 @@ AWAKE_CONTENT: dict[str, Any] = {
         "test); not met"
     ),
     "as_the_methods_describe": {
-        "engaged": (111, 241),
-        "disengaged": (509, 976),
-        "chance": {"engaged": 0.5078, "disengaged": 0.4894},
-        "above_chance": {"engaged": 0.067, "disengaged": 0.9781},
-        "engaged_above_disengaged": 0.0456,
+        "engaged": (124, 282),
+        "disengaged": (515, 994),
+        "chance": {"engaged": 0.5138, "disengaged": 0.4913},
+        "above_chance": {"engaged": 0.008, "disengaged": 0.9537},
+        "engaged_above_disengaged": 0.0104,
     },
     "decoded_jointly": {
-        "engaged": (149, 241),
-        "disengaged": (591, 976),
-        "chance": {"engaged": 0.5098, "disengaged": 0.528},
-        "above_chance": {"engaged": 0.9995, "disengaged": 1.0},
-        "engaged_above_disengaged": 0.6517,
+        "engaged": (179, 282),
+        "disengaged": (601, 994),
+        "chance": {"engaged": 0.5009, "disengaged": 0.5256},
+        "above_chance": {"engaged": 1.0, "disengaged": 1.0},
+        "engaged_above_disengaged": 0.8141,
     },
     "direction_while_running": {"separately": (1315, 2564), "jointly": (2084, 2564)},
     "cause": (
@@ -427,9 +427,9 @@ AWAKE_CONTENT: dict[str, Any] = {
         "names the running direction in 1,315 of 2,564 500 ms bins (51.3%), and "
         "decode_jointly, one posterior over both directions, in 2,084 (81.3%). "
         "Decoded jointly (not fixed before the run), engaged events are "
-        "congruent in 149 of 241 (61.8%, the paper 62.26%) against a chance of "
-        "51.0%, and disengaged events in 591 of 976 (60.6%, the paper 52.19%) "
-        "against 52.8%: both above chance, the two not different"
+        "congruent in 179 of 282 (63.5%, the paper 62.26%) against a chance of "
+        "50.1%, and disengaged events in 601 of 994 (60.5%, the paper 52.19%) "
+        "against 52.6%: both above chance, the two not different"
     ),
 }
 
@@ -1012,6 +1012,17 @@ def _read_cut_for(
     return clusters
 
 
+class _Lost(NamedTuple):
+    """The spikes a trial's tetrode file no longer holds, from a zero-filled end."""
+
+    file: str
+    kept: int
+    lost: int
+    start: float
+    stop: float
+    clusters: tuple[int, ...]
+
+
 class _Spikes(NamedTuple):
     """One tetrode's spikes over the day."""
 
@@ -1020,16 +1031,20 @@ class _Spikes(NamedTuple):
     clusters: NDArray[np.int64]
     trial: NDArray[np.int64]
     means: dict[tuple[int, int], NDArray[np.float64]]
+    lost: tuple[_Lost, ...] = ()
 
 
 def _tetrode_spikes(trials: list[_Trial], tetrode: int) -> _Spikes:
     """A tetrode's spikes in every trial: times on the day's clock, peaks in uV.
 
     ``means`` holds each (trial, cluster)'s mean waveform in uV, for checking
-    that a cluster id names one cell across trials.
+    that a cluster id names one cell across trials. ``lost`` describes each
+    trial's file whose end is zero-filled: the cut is checked against the
+    header's count and kept for the spikes the file still holds.
     """
     times, amplitudes, clusters, which = [], [], [], []
     means = {}
+    lost = []
     for index, trial in enumerate(trials):
         path = trial.tetrodes.get(tetrode)
         if path is None:
@@ -1042,7 +1057,21 @@ def _tetrode_spikes(trials: list[_Trial], tetrode: int) -> _Spikes:
             ]
         )
         n = spikes.times.size
-        cut = _read_cut_for(trial, tetrode, n)
+        cut = _read_cut_for(trial, tetrode, n + spikes.n_lost)
+        if spikes.n_lost:
+            gone = (
+                ()
+                if cut is None
+                else tuple(int(c) for c in np.unique(cut[n:]) if c > 0)
+            )
+            lost.append(
+                _Lost(
+                    path.name, n, spikes.n_lost,
+                    trial.start + (spikes.times[-1] if n else 0.0),
+                    trial.start + trial.duration, gone,
+                )
+            )  # fmt: skip
+            cut = None if cut is None else cut[:n]
         ids = np.full(n, UNSORTED, dtype=np.int64) if cut is None else cut
         times.append(spikes.times + trial.start)
         amplitudes.append((spikes.waveforms.max(axis=2) * scale).astype(np.float32))
@@ -1055,10 +1084,10 @@ def _tetrode_spikes(trials: list[_Trial], tetrode: int) -> _Spikes:
     if not times:
         empty = np.empty(0)
         return _Spikes(empty, np.empty((0, 4), np.float32), empty.astype(np.int64),
-                       empty.astype(np.int64), means)  # fmt: skip
+                       empty.astype(np.int64), means, tuple(lost))  # fmt: skip
     return _Spikes(
         np.concatenate(times), np.concatenate(amplitudes), np.concatenate(clusters),
-        np.concatenate(which), means,
+        np.concatenate(which), means, tuple(lost),
     )  # fmt: skip
 
 
@@ -1328,6 +1357,27 @@ def _sorting_watch_out(
     )
 
 
+def _lost_spikes_watch_out(tetrode: int, lost: _Lost) -> str:
+    """What a tetrode file's zero-filled end leaves out, for the watch-outs."""
+    units = (
+        "No unit loses spikes: the .cut puts every lost spike in cluster 0, "
+        "Tint's unassigned."
+        if not lost.clusters
+        else "Units "
+        + ", ".join(f"T{tetrode}_c{c}" for c in lost.clusters)
+        + " lose their spikes in that span; their silence there is not an "
+        "absence of firing."
+    )
+    return (
+        f"{lost.file} holds {lost.kept:,} of the {lost.kept + lost.lost:,} spikes "
+        "its header counts: its bytes are zero from the next spike to the end of "
+        "the file, where its data_end marker should be, so the rest were lost. T"
+        f"{tetrode} has no detected spikes from {lost.start:.1f} to {lost.stop:.1f} "
+        f"s on the day's clock. {units} In rec.marks, leave T{tetrode} out of "
+        "that span: a clusterless decode would read the lost spikes as no firing."
+    )
+
+
 def _tracking_watch_outs(
     track: PositionTrack,
     times: NDArray[np.float64],
@@ -1420,6 +1470,13 @@ def load_session(
         If a trial lacks its ``.set`` or ``.pos``, two trials overlap, a cut
         file is for another trial or another number of spikes, or a file
         breaks its format.
+
+    Warns
+    -----
+    UserWarning
+        For each tetrode file whose end is zero-filled: which spikes it
+        lost, and whether any unit loses spikes. The same note is in the
+        recording's watch-outs.
     """
     from neurospatial import Intervals
 
@@ -1442,6 +1499,13 @@ def load_session(
     tetrodes = sorted({t for trial in trials for t in trial.tetrodes})
     spikes = {t: _tetrode_spikes(trials, t) for t in tetrodes}
     spike_times, units = _units(spikes, trials, rat)
+    lost_spikes = [
+        _lost_spikes_watch_out(tetrode, lost)
+        for tetrode, day in spikes.items()
+        for lost in day.lost
+    ]
+    for note in lost_spikes:
+        warnings.warn(note, UserWarning, stacklevel=3)  # load_session <- load <- user
 
     epochs: dict[str, NDArray[np.float64]] = {
         EPOCHS[t.kind]: np.array([[t.start, t.start + t.duration]]) for t in trials
@@ -1536,6 +1600,7 @@ def load_session(
         _sorting_watch_out(spikes, trials),
     )
     notes.extend(finding for finding in findings if finding is not None)
+    notes.extend(lost_spikes)
     n_runs = len(runs)
     notes.append(
         f"{n_runs} runs from end to end ({np.sum(direction == 'outbound')} outbound, "
