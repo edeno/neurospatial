@@ -220,9 +220,13 @@ WORKED_RESULT: dict[str, Any] = {
         'events (Figure 3A; RUN: B = 0.05, F(1,268) = 186, p<0.001, R2 = 0.41)"'
     ),
     "source": f"{_PAPER}, eLife 11:e79031, Results and Figure 3A",
-    "paper": 0.41,
+    "paper": 0.05,
     "ours": None,
-    "criterion": None,
+    "criterion": (
+        "fixed before the run: over the nine sessions, the least-squares slope "
+        "of the replay difference on the place-field difference is within 0.01 "
+        "of the paper's B = 0.05, R^2 within 0.1 of its 0.41, and p < 0.001"
+    ),
     "parameters": None,
     "unmatched": (),
 }
