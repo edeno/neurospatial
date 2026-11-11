@@ -4518,6 +4518,12 @@ PFEIFFER_FOSTER_2013 = ReplayMethod(
         "at the arena walls, or what a moved field held in bins the rat "
         "never visited, and no code was published. Any choice here would be "
         "our own null, not theirs.",
+        "On the one public session (rat 1 day 1, the pfeiffer_2013 dataset), "
+        "this preset agrees with Pfeiffer's 110 significant labels of his 322 "
+        "windows on 61.5% of them (kappa 0.113), against 82.0% for "
+        "PFEIFFER_FOSTER_2015: the labels are most likely the 2015 paper's, "
+        "and the windows are not this paper's population-burst candidates. "
+        "Pinned in tests/datasets/test_pfeiffer_2013.py.",
     ),
 )
 
@@ -4544,6 +4550,14 @@ PFEIFFER_FOSTER_2015 = ReplayMethod(
         "total distance of 50 cm or more; build that variant with "
         "dataclasses.replace.",
         "No per-event shuffle test.",
+        "Against Pfeiffer's own labels: on the one public session (rat 1 day "
+        "1, the pfeiffer_2013 dataset), this preset agrees with the 110 "
+        "significant of his 322 windows on 82.0% of them (kappa 0.569): 65 "
+        "both, 13 ours only, 45 his only. 43 of the 45 decode to a path "
+        "shorter than 80 cm with the place fields that dataset's page builds; "
+        "the papers do not say how unvisited bins, speed or smoothing were "
+        "handled and published no code, so the cause is not settled. Pinned in "
+        "tests/datasets/test_pfeiffer_2013.py.",
     ),
 )
 
