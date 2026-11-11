@@ -42,6 +42,7 @@ OPT_IN = (
     "docs/datasets/bhattarai_2020.md",
     "docs/datasets/carey_2019.md",
     "docs/datasets/comrie_2026.md",
+    "docs/datasets/diba_2007.md",
     "docs/datasets/forli_2025.md",
     "docs/datasets/gardner_2022.md",
     "docs/datasets/grieves_2020.md",

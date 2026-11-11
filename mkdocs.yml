@@ -209,6 +209,7 @@ nav:
       - "Ólafsdóttir 2016: Z-track, rest, grid and place cells (rat)": datasets/olafsdottir_2016.md
       - "Tirole 2022: replay of two novel linear tracks (rat)": datasets/tirole_2022.md
       - "Shin 2019: W-maze learning with CA1 and prefrontal cortex (rat)": datasets/shin_2019.md
+      - "Diba 2007: preplay and replay at the ends of a linear track (rat)": datasets/diba_2007.md
   - Visualization:
       - Field Animation: user-guide/animation.md
       - Animation Overlays: animation_overlays.md
