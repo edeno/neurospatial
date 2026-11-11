@@ -265,6 +265,7 @@ required.
 - `LFPSource` (class): A session's LFP: where it is, its channels, and its unit and clock.
 - `Provenance` (class): Where a session's file came from and when it was fetched.
 - `Recording` (class): One session of a public dataset, as the arrays analyses take.
+- `SpikeMarks` (class): Every detected spike of each electrode: its time, amplitudes and cluster.
 - `VideoSource` (class): A session's camera video: where it is, its frame times and its calibration.
 - `catalog`: List every session of every dataset, one row each.
 - `fetch_all`: Download every session of a dataset into the cache.

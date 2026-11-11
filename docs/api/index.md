@@ -507,6 +507,8 @@ Loaders for published spatial neuroscience datasets, requiring
 - `Recording`, `Conversion`, `Provenance`, `VideoSource`, `LFPSource`: A loaded
   session, each conversion applied (with its basis), where the file came from,
   and a session's camera video and local field potential, fetched on request
+- `SpikeMarks`: Every detected spike's time, amplitude on each channel and
+  cluster, for clusterless decoding; waveforms read on request
 - `DatasetCheckError`: Raised when a session fails the clock or units check
 - `DownloadWarning`: Issued before a session's file is downloaded, with its
   size, URL and cache directory
