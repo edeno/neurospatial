@@ -25,6 +25,15 @@
   average scale, `rec.linearized` is the authors' 0-200 cm linearization,
   the epochs are PRE, each track, between them, POST and the rest-pot
   samples, and the four LFP channels (MATLAB v7.3) are fetched on request.
+- Checked against the authors' MATLAB code run in Octave on the same files
+  (its outputs in `tests/data/tirole_2022/`): `ripple_detection`'s
+  `tirole_2022` finds 99.96% of the authors' candidate events with the file's
+  own speed and 80.4% with the recording's; `TIROLE_2022` finds 89.9% of their
+  significant replays and 95.1% of ours are theirs, against 96.7-98.0% for two
+  runs that differ only in shuffles, the rest being neurospatial's decoding
+  (no rate floors, unvisited bins left out). Worked result, reproduced: the
+  Figure 3A RUN regression gives B = 0.0537, R² = 0.461 over 225 stable cells
+  (paper B = 0.05, R² = 0.41; the authors' code here 0.0502, 0.430).
 - `scripts/build_dataset_registry.py` fills a Zenodo registry: it locates
   each file a session row names in the record, checks the cached copy's MD5
   against the record's and pins its SHA-256.

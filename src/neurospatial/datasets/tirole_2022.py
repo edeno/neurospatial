@@ -206,11 +206,12 @@ SESSIONS: dict[str, SessionInfo] = {
 _PAPER = "Tirole et al. 2022"
 _README = "the deposit's README.txt"
 
-#: Not yet: the replay checks against the authors' own output are pinned in
-#: tests/datasets/test_tirole_2022.py.
+#: Figure 3A's RUN regression, computed from our judged replay events; pinned,
+#: with the checks against the authors' own output, in
+#: tests/datasets/test_tirole_2022_replay.py.
 WORKED_RESULT: dict[str, Any] = {
-    "status": "not yet",
-    "level": None,
+    "status": "reproduced",
+    "level": "A",
     "finding": (
         "the difference of a place cell's peak in-field rate between the tracks "
         "predicts the difference of its peak rate in local RUN replay"
@@ -221,14 +222,40 @@ WORKED_RESULT: dict[str, Any] = {
     ),
     "source": f"{_PAPER}, eLife 11:e79031, Results and Figure 3A",
     "paper": 0.05,
-    "ours": None,
+    #: B = 0.0537, R^2 = 0.461, F(1,223) = 190.8, p = 9e-32 over 225 stable
+    #: cells; the authors' code in Octave on the same files gives B = 0.0502,
+    #: R^2 = 0.430, F(1,225) = 169.6 over 227.
+    "ours": 0.0537,
     "criterion": (
         "fixed before the run: over the nine sessions, the least-squares slope "
         "of the replay difference on the place-field difference is within 0.01 "
         "of the paper's B = 0.05, R^2 within 0.1 of its 0.41, and p < 0.001"
     ),
-    "parameters": None,
-    "unmatched": (),
+    "parameters": (
+        "the authors' RUN candidate events with ripple power of 3 SD or more "
+        "(their detection, run in Octave); each decoded with decode_jointly on "
+        "both tracks' 10 cm raw rate maps (5 to 50 cm/s by position.v_cm, bins "
+        "never crossed left out) of the code's good place cells; TIROLE_2022 "
+        "with 1,000 shuffles of each null, seeded per event, on the whole event "
+        "(alpha 0.05) and on its halves split at the multi-unit minimum (alpha "
+        "0.025); one track per event by the code's posterior-sum rule; local "
+        "events, those whose midpoint falls in that track's exposure; stable "
+        "cells, a peak above 1 Hz in both halves of the laps on both tracks; x "
+        "the difference of 10 cm raw peak rates, y the difference of each "
+        "cell's mean peak rate over the events it fires in (1 ms bins, the "
+        "code's unnormalized 100-point Gaussian window); least squares"
+    ),
+    "unmatched": (
+        "9 of the paper's 10 sessions: Rat 4 session 1's spikes are not in the deposit",
+        "candidate events from single units only: the multi-unit clusters are "
+        "not deposited",
+        "no pyramidal-cell filter: the waveforms are not deposited",
+        "neurospatial's decoder, without the code's rate floors and with "
+        "unvisited bins left out (see TIROLE_2022's notes)",
+        "our shuffles, not the authors'",
+    ),
+    "attempted": None,
+    "why": None,
 }
 
 #: Findings computed from the data that each verified session must report.
@@ -281,6 +308,14 @@ _OFF_TRACK = (
     "most of the session, and the third track of the second protocol lie off "
     "it, so most samples fall in no bin by design. The placement tolerance is "
     "set from the samples on the tracks (epochs track_1 and track_2)."
+)
+_SPEED = (
+    "The authors' code gates candidate events and rate maps on the file's own "
+    "speed, position.v_cm, which is smoother than the recording's speed from "
+    "the positions as stored (below 5 cm/s in 85% of rat 3 session 2's samples "
+    "against 58%). With the recording's speed the paper's candidate "
+    "detector finds 80.4% of the authors' candidates over the nine sessions, and "
+    "with position.v_cm 99.96% (tests/datasets/test_tirole_2022_replay.py)."
 )
 _LFP_UNIT = (
     "The README calls the LFP 'in Volts ?'; the values run to the thousands, so "
@@ -740,6 +775,7 @@ def load_session(
             *reexposure,
             *removed,
             _NO_MUA,
+            _SPEED,
             _NO_WAVEFORMS,
             _V1,
             _NO_SLEEP,

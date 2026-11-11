@@ -134,6 +134,10 @@ bins the authors decoded on, for positions `(rec.linearized, 0)`.
   over 500 µs) cannot be applied. The authors' code falls back to the rate rule
   alone (below 5 Hz) without them.
 - Each track's own scale differs from the average scale of the positions.
+- The authors' code gates on the file's own speed, `position.v_cm`, which is
+  smoother than the speed computed from the stored positions; detection with
+  the recording's speed finds 80% of the authors' candidates, with theirs
+  almost all (below).
 - Rat 5 session 2's PRE and POST are Table 1's the other way round.
 - Rat 2 session 1's LFP file ends at 100,629.6 s, before its re-exposure.
 
@@ -146,10 +150,103 @@ bins the authors decoded on, for positions `(rec.linearized, 0)`.
 - `dt` 0.02 s and `run_dt` 0.25 s, the paper's decoding bins in replay and in
   running.
 
+## Validation against the authors' own pipeline
+
+The authors' MATLAB code (github.com/bendor-lab/Elife_Tirole_Huelin_Gorriz_2022
+at 44ecf42) was run in Octave on these files, all nine sessions. Its outputs,
+the candidate events, each RUN candidate's p-values, the significant events and
+the Figure 3A table, are in `tests/data/tirole_2022/authors_octave.npz`;
+`tests/datasets/test_tirole_2022_replay.py` pins every number below. Two inputs
+the paper used are not in the deposit, on both sides alike: multi-unit
+clusters (the multi-unit rate is built from the single units) and waveforms
+(no pyramidal-cell filter; the code then uses its rate rule alone).
+
+**Place cells.** A port of `calculate_place_fields.m` gives the code's good
+place cells in all nine sessions, at 2 cm and at 10 cm, and of
+`get_stable_cells.m` its 227 stable cells.
+
+**Candidate events.** `ripple_detection.literature_methods.tirole_2022` on the
+loaded session, with the code's 2 cm place cells, against the authors'
+candidates with ripple power of 3 SD or more (the gate the code applies when it
+counts replay), over the nine sessions:
+
+| Speed the detector is given | Ours | Authors' | Authors' we find | Ours they have |
+| --- | --- | --- | --- | --- |
+| the recording's (`rec`, from positions) | 16,636 | 19,558 | 80.4% | 94.6% |
+| the file's `position.v_cm`, which the code uses | 19,660 | 19,558 | 99.96% | 99.46% |
+
+The speed explains the gap. The file's speed is much smoother than the one
+computed from the stored positions (correlation 0.88 against 0.30 between
+samples 1 s apart, on the default session) and lower at rest (below 5 cm/s in
+85% of samples against 58%), so fewer events fail the median-speed gate of
+5 cm/s.
+With the file's speed what remains sits at the rules' bounds: our extra events
+are mostly exactly 100 ms long, a duration the code computes in floating point
+and drops at the bound, or have ripple power just above 3 SD by the detector's
+recomputation from the raw channel where the authors' stored z-score is just
+below; of the 8 authors' events we miss, 5 have ripple power of 3.00 to
+3.02 SD, 1 a multi-unit peak of 3.00 SD and 2 exactly 5 active place cells.
+
+**Judging replay.** The `TIROLE_2022` preset of `neurospatial.replay` on the
+authors' own RUN candidates (those overlapping a track exposure, with ripple
+power of 3 SD or more), each decoded with `decode_jointly` on both tracks' 10 cm
+raw rate maps of the code's place cells. As the code does, each event is tested
+whole (p < 0.05 against all three shuffles) and as two halves split at the
+multi-unit minimum of its middle third (p < 0.025). Over 7,002 track-event
+pairs of the nine sessions:
+
+| | Authors' significant | Ours | Both | Authors' we find | Ours they have |
+| --- | --- | --- | --- | --- | --- |
+| each track | 1,658 | 1,567 | 1,490 | 89.9% | 95.1% |
+| after one track is chosen per event | 1,409 | 1,378 | 1,296 | 92.0% | 94.0% |
+
+Two runs that differ only in their shuffles agree on 96.7% to 98.0% of their
+significant pairs (redrawing each of the authors' p-values from 1,000
+shuffles), so shuffles explain most of the gap on our side. The rest is the
+decoding, where neurospatial does what its own decoder does and does not copy
+the code:
+
+- the code raises every rate below 10^(log2(N) − log2(400)) Hz to that floor,
+  and each rate raised to its spike count too, which makes an unlikely position
+  less unlikely; on the default session, decoding with the code's floored maps
+  passed in finds 96.6% of its significant pairs, against 93.6% without;
+- the code sets the bins the rat never crossed to 0, where the package leaves
+  them out;
+- the code zeroes a 20 ms time bin when no spike falls in it inside the event's
+  bounds, while its last bin can reach past the event's end; the package zeroes
+  a time bin by its own spikes.
+
+With those three steps reproduced, the stored weighted correlations come back
+to within 1e-6 for 99.75% of the default session's 806 track-event pairs;
+neurospatial's decoding gives 72.5% of the 805 with a defined score within 0.01 (r = 0.967). `TIROLE_2022` now
+requires 5 time bins, as the code scores an event or a half, where it required
+5 active cells, which the code applies when it selects candidates.
+
 ## Worked result
 
-Not yet. The paper's Figure 3A regression (B = 0.05, F(1,268) = 186, R² = 0.41)
-needs the replay pipeline's judged events and place fields.
+**Reproduced (level A).** The paper's Figure 3A: "contextual rate modulation was
+expressed across local awake replay events (Figure 3A; RUN: B = 0.05, F(1,268)
+= 186, p<0.001, R2 = 0.41)". Each stable place cell's difference in peak
+in-field rate between the tracks predicts its difference in peak rate during
+the local replay of each track while the rat runs.
+
+The criterion was fixed before the run: over the nine sessions, a slope within
+0.01 of 0.05, R² within 0.1 of 0.41 and p < 0.001. From our judged events, one
+track chosen per event by the code's rule, local events (those during that
+track's exposure), the code's stable cells (a peak above 1 Hz in both halves of
+the laps on both tracks) and least squares:
+
+| | Cells | B | R² | F |
+| --- | --- | --- | --- | --- |
+| Paper (10 sessions) | 270 | 0.05 | 0.41 | F(1,268) = 186 |
+| Authors' code in Octave (9 sessions) | 227 | 0.0502 | 0.430 | F(1,225) = 169.6 |
+| Ours (9 sessions) | 225 | 0.0537 | 0.461 | F(1,223) = 190.8 |
+
+The Python chain run on the authors' own significant events gives the Octave
+row exactly (the same 227 cells), so the remaining difference is our judging.
+What could not be matched: Rat 4 session 1 is not in the deposit; candidates
+come from single units only, on both sides; there is no pyramidal-cell filter
+without waveforms; and our decoding and shuffles are neurospatial's.
 
 ## Cite
 
