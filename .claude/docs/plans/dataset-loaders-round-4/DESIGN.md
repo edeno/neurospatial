@@ -35,7 +35,7 @@ Outside the Frank lab; awake replay.
 | --- | --- | --- |
 | `carey_2019` (exists) | DataLad MotivationalT | Authors' MATLAB run in Octave: 3,657 sequences over the 19 paper sessions (paper 3,780); `.claude/docs/carey-octave-repro/` |
 | `tirole_2022` (new) | Zenodo 7114733 (CC0; mirror of Dryad 10.5061/dryad.ksn02v76h, whose API needs a token) | Authors' MATLAB run in Octave: per-event scores/p-values and significant RUN replay; Fig. 3A RUN regression B = 0.0502, R^2 = 0.430, n = 227 (paper B = 0.05, R^2 = 0.41, F(1,268) = 186); `.claude/docs/tirole-octave-repro/` |
-| `pfeiffer_2013` (new) | kemerelab/UncoveringTemporalStructureHippocampus `data/openfield.nel` (MIT), one session: Pfeiffer & Foster 2013 rat 1 day 1 | Pfeiffer's 322 `RippleTimes` and 110 `SignificantRipples` in the file; Krause & Drugowitsch 2022 metadata confirms rat1 day1 n_SWRs = 322; `.claude/docs/pfeiffer-openfield/` |
+| `pfeiffer_2013` (new) | kemerelab/UncoveringTemporalStructureHippocampus `data/openfield.nel`, one session (Pfeiffer & Foster 2013 rat 1 day 1). No data license: released as a "sample recording epoch" under Maboudi et al. 2018's data statement (Pfeiffer and Foster are co-authors); the full data are on request; the repo's MIT license covers its code | Pfeiffer's 322 `RippleTimes` and 110 `SignificantRipples` in the file; Krause & Drugowitsch 2022 metadata confirms rat1 day1 n_SWRs = 322; `.claude/docs/pfeiffer-openfield/` |
 | `shin_2019` (new) | DANDI 000978 (CC-BY-4.0), 9 NWB files, 28-47 GB each, mostly raw | Text: per reward-well visit 10.3 s immobility, 7.3 SWRs, 2.3 candidates, 0.9 replays; 818/1,533 trials with candidates |
 | `olafsdottir_2016` (new) | Zenodo 5566548 (CC-BY-4.0), Axona, 9.9 GB zip | To establish from the paper (Zotero PDF) |
 
