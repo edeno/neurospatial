@@ -520,7 +520,7 @@ def _stable_ca1(rec):
 
 
 def _templates(rec, envs, speed, cells, epoch):
-    """Each trajectory's linearized rate maps in one run epoch."""
+    """Each trajectory's linearized rate maps in one run epoch, where it was run."""
     from neurospatial import compute_spatial_rates
 
     table = rec.trials.intervals_table()
@@ -533,6 +533,8 @@ def _templates(rec, envs, speed, cells, epoch):
             & (table["start_time"] >= start)
             & (table["start_time"] < stop)
         ][["start_time", "stop_time"]].to_numpy(dtype=float)
+        if not len(rows):  # not run in this session: no template
+            continue
         rates[name] = compute_spatial_rates(
             envs[name],
             [rec.spike_times[k] for k in cells],
@@ -626,6 +628,7 @@ def _judge(job):
             rng,
         )
         for name, env in envs.items()
+        if name in rates
     ]
     return bool(result.is_replay), min(lab) < SHIN_2019.alpha
 
@@ -670,7 +673,7 @@ def _per_visit(session, *, workers=6):
     windows = loader._read_lfp_windows(
         _stream_url(_session_entry("shin_2019", session)), channels, run
     )
-    swrs, candidates, unbounded, jobs, n_place = [], [], [], [], []
+    swrs, candidates, unbounded, jobs, n_place, missing = [], [], [], [], [], []
     for epoch, (samples, times) in enumerate(windows):
         rates = _templates(rec, envs, speed, stable, epoch)
         peak = np.nanmax(
@@ -678,6 +681,7 @@ def _per_visit(session, *, workers=6):
         )
         place = np.flatnonzero(peak >= PLACE_PEAK)
         n_place.append(int(place.size))
+        missing.extend((epoch, name) for name in PATHS if name not in rates)
         counts = spike_counts(
             [rec.spike_times[k] for k in stable], times, sampling_rate=loader.LFP_RATE
         )
@@ -721,7 +725,14 @@ def _per_visit(session, *, workers=6):
                 trains, start, stop, time_bin=REPLAY_BIN, step=REPLAY_BIN
             )
             jobs.append(
-                (envs, place_rates, spikes, centers, [SEED, epoch, index], start)
+                (
+                    {name: envs[name] for name in place_rates},
+                    place_rates,
+                    spikes,
+                    centers,
+                    [SEED, epoch, index],
+                    start,
+                )
             )
     with ProcessPoolExecutor(
         workers, mp_context=multiprocessing.get_context("fork")
@@ -750,6 +761,7 @@ def _per_visit(session, *, workers=6):
         "n_swrs": int(sum(len(e) for e in swrs)),
         "n_candidates": int(sum(len(e) for e in candidates)),
         "n_judged": len(jobs),
+        "untraveled": missing,
         "swr_rows": np.concatenate(swrs),
         "rec": rec,
     }
