@@ -1,0 +1,50 @@
+{
+ "dataset": "pfeiffer_2013",
+ "paper": "Pfeiffer & Foster (2013)",
+ "paper_citation": "Pfeiffer BE, Foster DJ (2013). Hippocampal place-cell sequences depict future paths to remembered goals. Nature 497, 74-79. https://doi.org/10.1038/nature12112",
+ "species": "rat",
+ "brain_regions": [
+  "dorsal CA1"
+ ],
+ "apparatus": "2 m x 2 m open arena with 30 cm walls and 36 reward wells, alternating random foraging and a daily Home well",
+ "license": "MIT",
+ "archive": {
+  "name": "GitHub kemerelab/UncoveringTemporalStructureHippocampus (commit f86b7dc)",
+  "url": "https://github.com/kemerelab/UncoveringTemporalStructureHippocampus/tree/f86b7dcc9ebf1105d9738086a91928f8f3f575a2",
+  "citation": "Maboudi K, Ackermann E, de Jong LW, Pfeiffer BE, Foster D, Diba K, Kemere C (2018). Uncovering temporal structure in hippocampal output patterns. eLife 7, e34467. https://doi.org/10.7554/eLife.34467; data/openfield.nel from https://github.com/kemerelab/UncoveringTemporalStructureHippocampus at commit f86b7dcc9ebf1105d9738086a91928f8f3f575a2 (MIT license)"
+ },
+ "stated": {
+  "sampling_rate": {
+   "value": 57.43,
+   "basis": "inferred",
+   "source": "the file: one over the median position interval is 57.43 Hz, and the position signal's own _fs is 57.43165632847568; Pfeiffer & Foster 2013 state an overhead video 'that recorded continuously at 60 Hz', and the file's intervals spread from 7.8 to 25.4 ms (1st to 99th percentile), so 57.43 is this file's rate, not the camera's"
+  },
+  "position_span": {
+   "value": [
+    160.0,
+    240.0
+   ],
+   "basis": "stated",
+   "source": "the Methods of Pfeiffer & Foster 2013: 'a 2 m x 2 m black arena with 30-cm-high walls'; the largest span of the tracked positions must lie within 20% of the 200 cm side"
+  },
+  "speed_limit": {
+   "value": 393.0,
+   "basis": "stated",
+   "source": "Iriarte-Díaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Rattus runs at most 13.78 body lengths/s at a 0.190 m body length, 2.62 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is from two head-mounted LEDs, which swing faster than the body, and no source read states head speed"
+  }
+ },
+ "sessions": [
+  {
+   "session": "rat1_day1",
+   "archive": "GitHub kemerelab/UncoveringTemporalStructureHippocampus (commit f86b7dc)",
+   "url": "https://raw.githubusercontent.com/kemerelab/UncoveringTemporalStructureHippocampus/f86b7dcc9ebf1105d9738086a91928f8f3f575a2/data/openfield.nel",
+   "file_name": "openfield.nel",
+   "sha256": "8ff8b9be5ac987f10db0d54d4e83de4171f1243d9eb76feadd4be62e490b300a",
+   "size_bytes": 55787347,
+   "verified": true,
+   "default": true,
+   "n_units": 212,
+   "verification": "read 2026-11-11 with the restricted reader: 212 units, as Pfeiffer & Foster 2013 state for rat 1 day 1 ('212 ... units active during exploration from rat 1 on experimental days 1'); 322 candidate windows, the n_SWRs = 322 that Krause & Drugowitsch 2022's code (replay_structure/metadata.py at 45d67dff) lists for rat 1 day 1; 203 excitatory and 9 inhibitory ids, disjoint, covering every unit; positions span 198.6 x 191.6 cm inside the 2 m square at x 90-290, y 0-200; 110 significant ids, 0-based into the 322"
+  }
+ ]
+}
