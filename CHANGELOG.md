@@ -17,6 +17,17 @@
   in practice. Decoded positions change wherever rate maps go below 1e-10 Hz.
   `min_rate=1e-10` restores the old floor in `log_poisson_likelihood`.
 
+### Replay: one template of a joint decode is scored on its exact conditional posterior
+
+- `detect_replay` and `replay_significance` score a template of a joint
+  decode on the posterior given that template, which `decode_jointly`
+  computes in log space. They used to divide the template's share,
+  `result.joint(name)`, by its row sums. Where the template's probability in
+  a time bin underflowed to 0, the share row had no mass, and scores that
+  need rows summing to 1, such as `fit_linear_trajectory`, refused the event.
+  Shuffles that decode again are scored the same way. `replay_significance`
+  given a share and no null that decodes again still divides it.
+
 ### Datasets: `olafsdottir_2016` gives awake replay at the corners (Ólafsdóttir et al. 2017)
 
 - `rec.epochs["corner_stops"]`, `["engaged"]` and `["disengaged"]`: each stay

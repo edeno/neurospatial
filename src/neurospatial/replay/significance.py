@@ -470,7 +470,12 @@ def replay_significance(
         For a joint decode: the template whose share,
         ``decode_jointly(...).joint(template)``, is ``posterior``. ``env``
         may then be one environment or a mapping, as for
-        :func:`~neurospatial.decoding.decode_jointly`.
+        :func:`~neurospatial.decoding.decode_jointly`. A score that needs
+        rows summing to 1 sees the posterior given the template: decoded
+        again when a null that decodes again runs, otherwise the share
+        divided by its row sums, which leaves a row empty where the
+        template's probability underflowed to 0. ``detect_replay`` given
+        the joint decode itself always uses its exact conditional posterior.
     pseudo_event_pool : NDArray[np.float64] or None, shape (n_pool, n_bins)
         Posterior rows of the session's candidate events, stacked, for the
         pseudo-event null. Each pseudo-event draws its time bins at random,
@@ -679,13 +684,26 @@ def replay_significance(
     if _takes_rng(score) and "rng" not in options:
         options["rng"] = int(generator.integers(2**63 - 1))
     track_env = _track_env(env, encoding_models, template)
+    run = _nulls_to_run(nulls, spike_counts, encoding_models, dt, pseudo_event_pool)
+    decoder = None
+    if any(name in run for name in _DECODING_NULLS):
+        # _nulls_to_run runs these nulls only when all three inputs are given.
+        assert encoding_models is not None
+        assert dt is not None
+        decoder = _EventDecoder(env, encoding_models, dt, prior, template)
     # One template's share of a joint decode keeps its joint weights only for
     # a score built for them; any other score sees the conditional posterior.
     conditional = template is not None and not _uses_joint_weights(score, options)
-    if conditional:
+    if conditional and decoder is not None:
+        # Decoded again, the posterior given the template is exact even where
+        # the share underflows to 0; the decode is checked against the share
+        # before any null runs.
+        posterior = decoder.decode(spike_counts, conditional=True)
+        if empty_time_bins == "zero":
+            posterior = _zeroed_event_rows(posterior, spike_counts)
+    elif conditional:
         posterior = _conditional_rows(posterior)
     scorer = _scorer_for(score, track_env, posterior, times, options)
-    run = _nulls_to_run(nulls, spike_counts, encoding_models, dt, pseudo_event_pool)
     options_of = _checked_null_options(null_options, run, _OPERATION)
     _check_nulls_fit_event(run, times, dt, options, empty_time_bins)
     pool = (
@@ -696,12 +714,6 @@ def replay_significance(
 
     observed_result = scorer.observe()
     observed = _observed_statistic(observed_result, score, spec, use_absolute)
-    decoder = None
-    if any(name in run for name in _DECODING_NULLS):
-        # _nulls_to_run runs these nulls only when all three inputs are given.
-        assert encoding_models is not None
-        assert dt is not None
-        decoder = _EventDecoder(env, encoding_models, dt, prior, template)
     event = _EventShuffles(
         track_env=track_env,
         posterior=scorer.posterior,
@@ -1025,9 +1037,7 @@ class _EventShuffles:
         return self.decoder, self.counts
 
     def finish(self, decoded: Any, event_counts: Any) -> Any:
-        """A shuffle's decoded posterior, conditioned and zeroed as the event's."""
-        if self.conditional:
-            decoded = _conditional_rows(decoded)
+        """A shuffle's decoded posterior, zeroed as the event's."""
         if self.zero_empty:
             return _zero_empty_rows(decoded, np.asarray(event_counts))
         return decoded
@@ -1035,7 +1045,9 @@ class _EventShuffles:
     def decode_each(self, shuffled_counts: Iterable[Any]) -> Iterator[Any]:
         """Decode shuffled counts as the posterior was decoded."""
         decoder, _ = self.decoding()
-        for decoded, event_counts in decoder.decode_each(shuffled_counts):
+        for decoded, event_counts in decoder.decode_each(
+            shuffled_counts, conditional=self.conditional
+        ):
             yield self.finish(decoded, event_counts)
 
 
@@ -1129,7 +1141,9 @@ def _place_field_circular_shuffles(
     """The event decoded with each cell's rate map shifted along the track."""
     decoder, counts = event.decoding()
     return (
-        event.finish(decoder.decode(counts, models), counts)
+        event.finish(
+            decoder.decode(counts, models, conditional=event.conditional), counts
+        )
         for models in decoder.shifted_models(event.n_shuffles, event.generator)
     )
 
@@ -1767,7 +1781,9 @@ class _EventDecoder:
             models = models[self.template]
         return np.asarray(getattr(models, "firing_rates", models))
 
-    def decode(self, counts: Any, models: Any = None) -> NDArray[np.float64]:
+    def decode(
+        self, counts: Any, models: Any = None, *, conditional: bool = False
+    ) -> NDArray[np.float64]:
         """The posterior of ``counts``, with ``models`` replacing the rate maps.
 
         With one set of rate maps this is ``decode_position(env, counts,
@@ -1776,6 +1792,13 @@ class _EventDecoder:
         rather than for every shuffle. ``models`` is a place-field shuffle's
         ``(rates, prior)`` from :meth:`shifted_models`: finite, non-negative
         rates whose unsupported bins the prior excludes.
+
+        For a template of a joint decode this is its share,
+        ``result.joint(template)``, or with ``conditional`` the posterior
+        given the template, ``result.conditional[template].posterior``. The
+        latter is computed in log space, so it stays a probability mass in a
+        time bin where the template's probability underflows to 0 and its
+        share has no mass to divide.
         """
         from neurospatial.decoding import decode_jointly
         from neurospatial.decoding._support import validate_prior
@@ -1808,10 +1831,12 @@ class _EventDecoder:
                 dt=self.dt,
                 prior=self.prior,
             )
+        if conditional:
+            return np.asarray(result.conditional[self.template].posterior)
         return np.asarray(result.joint(self.template))
 
     def decode_each(
-        self, shuffled: Iterable[NDArray[np.int64]]
+        self, shuffled: Iterable[NDArray[np.int64]], *, conditional: bool = False
     ) -> Iterator[tuple[NDArray[np.float64], NDArray[np.int64]]]:
         """Each shuffle's posterior, with its counts, as :meth:`decode` gives it.
 
@@ -1824,7 +1849,7 @@ class _EventDecoder:
 
         if self.template is not None:
             for counts in shuffled:
-                yield self.decode(counts), counts
+                yield self.decode(counts, conditional=conditional), counts
             return
 
         def decoded(

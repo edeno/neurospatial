@@ -103,6 +103,96 @@ class TestTemplateShares:
         assert np.isfinite(result.p_value)
 
 
+@pytest.fixture(scope="module")
+def joint_with_a_vanishing_template(track):
+    """A sweep whose "in" template is impossible in one time bin.
+
+    Cell 0 is silent in the "in" maps and fires 40 spikes in bin 4, so the
+    "in" template's probability there underflows to exactly 0: its share has
+    no mass, while its conditional posterior is still a probability mass.
+    """
+    env, rates = track
+    counts = _sweep_counts()
+    counts[4, 0] = 40
+    times = DT * (np.arange(len(counts)) + 0.5)
+    silent = rates.copy()
+    silent[0] = 0.0
+    maps = {"out": rates, "in": silent}
+    joint = decode_jointly(env, counts, maps, dt=DT, times=times)
+    return env, maps, counts, times, joint
+
+
+class TestVanishingTemplate:
+    """A share that underflows to 0 is scored on the exact conditional posterior."""
+
+    def test_the_share_row_is_empty_and_the_conditional_is_not(
+        self, joint_with_a_vanishing_template
+    ):
+        *_, joint = joint_with_a_vanishing_template
+        assert joint.joint("in")[4].sum() == 0.0
+        np.testing.assert_allclose(joint.conditional["in"].posterior.sum(axis=1), 1.0)
+
+    def test_posterior_nulls_score_the_conditional(
+        self, joint_with_a_vanishing_template
+    ):
+        env, _maps, counts, times, joint = joint_with_a_vanishing_template
+        method = dataclasses.replace(WU_2017, n_shuffles=50)
+        share = detect_replay(
+            env,
+            joint,
+            times,
+            replay_method=method,
+            spike_counts=counts,
+            template="in",
+            rng=0,
+        )
+        alone = detect_replay(
+            env,
+            joint.conditional["in"].posterior,
+            times,
+            replay_method=method,
+            spike_counts=counts,
+            rng=0,
+        )
+        assert share.score == pytest.approx(alone.score)
+        assert share.p_value == alone.p_value
+
+    def test_a_null_that_decodes_again_scores_the_conditional(
+        self, joint_with_a_vanishing_template
+    ):
+        env, maps, counts, times, joint = joint_with_a_vanishing_template
+        result = detect_replay(
+            env,
+            joint,
+            times,
+            replay_method=dataclasses.replace(OLAFSDOTTIR_2017, n_shuffles=30),
+            spike_counts=counts,
+            encoding_models=maps,
+            dt=DT,
+            template="in",
+            rng=0,
+        )
+        assert np.isfinite(result.score)
+        assert np.isfinite(result.p_value)
+
+    def test_a_score_without_shuffles_scores_the_conditional(
+        self, joint_with_a_vanishing_template
+    ):
+        env, _maps, _counts, times, joint = joint_with_a_vanishing_template
+        method = ReplayMethod(
+            name="fit_only",
+            reference="test",
+            score=fit_linear_trajectory,
+            score_options={"method": "map"},
+            criteria=(ReplayCriterion("score", ">", 0.5),),
+        )
+        share = detect_replay(env, joint, times, replay_method=method, template="in")
+        alone = detect_replay(
+            env, joint.conditional["in"].posterior, times, replay_method=method
+        )
+        assert share.score == pytest.approx(alone.score)
+
+
 def test_a_sampled_score_without_shuffles_follows_the_seed(track, monkeypatch):
     env, rates = track
     counts = _sweep_counts()

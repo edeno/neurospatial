@@ -67,12 +67,12 @@ def decoded_counts(monkeypatch):
     seen = []
     decode, decode_each = _EventDecoder.decode, _EventDecoder.decode_each
 
-    def spy(self, counts, models=None):
+    def spy(self, counts, models=None, **options):
         seen.append(np.array(counts))
-        return decode(self, counts, models)
+        return decode(self, counts, models, **options)
 
-    def spy_each(self, shuffled):
-        for posterior, counts in decode_each(self, shuffled):
+    def spy_each(self, shuffled, **options):
+        for posterior, counts in decode_each(self, shuffled, **options):
             seen.append(np.array(counts))
             yield posterior, counts
 

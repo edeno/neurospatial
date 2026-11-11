@@ -2343,7 +2343,13 @@ def _measure_event(
             track_length = _criteria_track_length(replay_method, track_env)
     elif replay_method.score is not None:
         score = _untested_score(
-            replay_method, track_env, posterior, times, counts, options, condition, rng
+            replay_method,
+            track_env,
+            _given_template(event, rows) if condition else posterior,
+            times,
+            counts,
+            options,
+            rng,
         )
 
     # Whether the verdict reads the score: through the nulls or a criterion.
@@ -2607,6 +2613,19 @@ def _score_options(replay_method: ReplayMethod, seed: int | None) -> dict[str, A
     return options
 
 
+def _given_template(event: _Event, rows: NDArray[np.intp]) -> NDArray[np.float64]:
+    """The tested rows of a joint decode's share, as the posterior given its template.
+
+    The joint decode computes it in log space, so a time bin where the
+    template's probability underflows to 0 still has a probability mass,
+    which dividing the share by its row sums could not recover.
+    """
+    assert event.joint is not None
+    assert event.template is not None
+    conditional = event.joint.conditional[event.template].posterior
+    return np.asarray(conditional, dtype=np.float64)[rows]
+
+
 def _conditions_share(
     replay_method: ReplayMethod, event: _Event, options: Mapping[str, Any]
 ) -> bool:
@@ -2671,7 +2690,7 @@ def _score_test(
     ``posterior`` is a mapping for templates decoded separately, which are
     tested on their own environments.
     """
-    from neurospatial.replay.significance import _conditional_rows, replay_significance
+    from neurospatial.replay.significance import replay_significance
 
     assert replay_method.score is not None
     zeroes = replay_method.empty_time_bins == "zero"
@@ -2682,7 +2701,7 @@ def _score_test(
         and not _decodes_again(replay_method)
     ):
         # Nulls that decode again condition the share themselves.
-        posterior = _conditional_rows(posterior)
+        posterior = _given_template(event, rows)
     env, inputs = _null_inputs(
         replay_method,
         event,
@@ -2712,18 +2731,13 @@ def _untested_score(
     times: NDArray[np.float64],
     counts: NDArray[np.int64] | None,
     options: dict[str, Any],
-    condition: bool,
     rng: np.random.Generator | int | None,
 ) -> float:
     """The score of the tested rows, for a method without a shuffle test."""
-    from neurospatial.replay.significance import (
-        _conditional_rows,
-        _takes_rng,
-        _zero_empty_rows,
-    )
+    from neurospatial.replay.significance import _takes_rng, _zero_empty_rows
 
     assert replay_method.score is not None
-    scored = _conditional_rows(posterior) if condition else posterior
+    scored = posterior
     if replay_method.empty_time_bins == "zero":
         assert counts is not None
         scored = _zero_empty_rows(scored, counts)
