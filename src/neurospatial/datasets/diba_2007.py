@@ -25,7 +25,7 @@ Maboudi et al. 2018 released it as a "sample recording epoch"
 (``data/fig1.nel``, a dill pickle of nelpy objects, in eLife's archived copy
 of their repository), with the rat's 2-D position at 60 Hz. Its spikes are
 on hc-3's clock: 95.3% of the file's 258,427 spike times fall within 1 µs of
-an hc-3 spike of the same session (18% at a 0.1 s lag). The other 26 sessions
+an hc-3 spike of the same session (none at a 0.1 s lag). The other 26 sessions
 load with spikes, units and LFP only.
 
 Sources read: the paper and its Supplementary Methods (Nature Neuroscience
@@ -93,6 +93,7 @@ if TYPE_CHECKING:
 __all__ = [
     "EXPECTED_WATCH_OUTS",
     "PAPER_SESSIONS",
+    "REPLAY_CHECK",
     "REQUIRES",
     "WATCH_OUTS",
     "WORKED_RESULT",
@@ -202,9 +203,84 @@ TOLERANCE_QUANTILE = 0.95
 #: the platform's edge) do not lengthen it.
 END_QUANTILES = (0.005, 0.995)
 
+#: The preplay/replay shares on the session with positions, measured with
+#: ``tests/datasets/diba_2007_replay.py`` and pinned by
+#: ``tests/datasets/test_diba_2007.py``: per segment and pooled, with hc-3's
+#: units (the loaded data) and, to name the cause of the gap, with Diba's
+#: own sorting of the same recording (Maboudi et al.'s ``spikes_noIN``).
+REPLAY_CHECK: dict[str, Any] = {
+    "session": POSITION_SESSION,
+    "place_cells": {
+        "long_track": {"increasing": 13, "decreasing": 11},
+        "short_track": {"increasing": 14, "decreasing": 9},
+    },
+    "hc3_units": {
+        "long_track": {
+            "events": 224,
+            "forward": 8,
+            "reverse": 12,
+            "forward_before": 4,
+            "reverse_after": 11,
+        },
+        "short_track": {
+            "events": 490,
+            "forward": 21,
+            "reverse": 33,
+            "forward_before": 14,
+            "reverse_after": 29,
+        },
+        "pooled": {
+            "events": 714,
+            "forward": 29,
+            "reverse": 45,
+            "forward_before": 18,
+            "reverse_after": 40,
+        },
+    },
+    "diba_sorting": {
+        "long_track": {
+            "events": 242,
+            "forward": 21,
+            "reverse": 25,
+            "forward_before": 11,
+            "reverse_after": 19,
+        },
+        "short_track": {
+            "events": 714,
+            "forward": 115,
+            "reverse": 55,
+            "forward_before": 67,
+            "reverse_after": 47,
+        },
+        "pooled": {
+            "events": 956,
+            "forward": 136,
+            "reverse": 80,
+            "forward_before": 78,
+            "reverse_after": 66,
+        },
+    },
+    "events_per_immobile_second": {"long_track": 0.47, "short_track": 0.54},
+    "why": (
+        "With hc-3's units, 74 of 714 events (10.4%) are significant, 29 "
+        "forward (4.1%) and 45 reverse (6.3%): no more than the 5% in each tail "
+        "the test passes by chance (one-sided binomial p = 0.89 and 0.069), "
+        "against the paper's 36% and 19%. With Diba's own sorting of the same "
+        "spikes (Maboudi et al.'s file, 103 units, interneurons left out, every "
+        "one taken as pyramidal since the file has no labels) and the same "
+        "pipeline, 216 of 956 are significant (22.6%; forward 14.2%, reverse "
+        "8.4%, each p < 0.001 against 5%), forward to reverse 1.7 (the paper's "
+        "1.9), reverse after the run 82.5% (paper 85%), forward before it 57.4% "
+        "(paper 95%, p = 0.051 against one half). The sorting accounts for the "
+        "excess of significant events; it does not account for the forward "
+        "share, which neither sorting raises toward 95%. Events are also about "
+        "five times as frequent as the paper's 0.1 per second of immobility"
+    ),
+}
+
 #: The worked result: the criterion was fixed before the analysis was run
-#: (commit "diba_2007: worked-result criterion fixed before the run");
-#: ``ours`` and ``parameters`` were filled in after it.
+#: (commit "diba_2007: worked-result criterion fixed before the run"), and is
+#: not met.
 WORKED_RESULT: dict[str, Any] = {
     "status": "not possible yet",
     "level": None,
@@ -229,29 +305,7 @@ WORKED_RESULT: dict[str, Any] = {
     ),
     "paper": "95% (841/887) forward before the run; 85% (395/464) reverse after it",
     "ours": None,
-    "criterion": (
-        "fixed before the run. On every track segment of every session with "
-        "positions (2006-6-7_16-40-19: the long-track and the short-track "
-        "segment), for each running direction: place cells are pyramidal "
-        "units whose rate map over that direction's laps peaks at 5 Hz or more; "
-        "candidate events are ripple_detection.literature_methods.diba_2007 "
-        "(60 ms of silence of that direction's place cells, then max(5, 30%) "
-        "of them firing in the next 300 ms, speed at or below 10 cm/s at both "
-        "ends), kept when wholly inside a reward area (within 21 cm of a track "
-        "end); each event is judged with replay.methods.DIBA_BUZSAKI_2007 "
-        "(first spike, 500 cell-identity shuffles, two-sided p < 0.1) against "
-        "its direction's template, and an event found for both directions "
-        "(overlapping windows) is assigned as the preset's template_choice "
-        "does: among templates on which it is significant, the one with more "
-        "active cells, then larger |rho|. A significant event with rho > 0 is "
-        "forward, with rho < 0 reverse; it is 'before the run' when it lies at "
-        "the start end of its template's direction and 'after the run' at the "
-        "far end. Reproduced when, pooled over the segments, more than half "
-        "the significant forward events are before the run and more than half "
-        "the significant reverse events are after it, each with a one-sided "
-        "binomial p < 0.05 against one half; seed 2007. The shares are "
-        "reported beside the paper's 95% and 85%, per segment and pooled."
-    ),
+    "criterion": None,
     "parameters": None,
     "unmatched": (
         "one session of the paper's 69 has positions; the paper pools three rats",
@@ -264,8 +318,53 @@ WORKED_RESULT: dict[str, Any] = {
         "samples along the track, an inference; the paper does not say where "
         "on the platform an event must be",
     ),
-    "attempted": None,
-    "why": "the criterion is fixed; the analysis has not run yet",
+    "attempted": {
+        "value": 0.621,
+        "criterion": (
+            "fixed before the run. On every track segment of every session "
+            "with positions (2006-6-7_16-40-19: the long-track and the "
+            "short-track segment), for each running direction: place cells "
+            "are pyramidal units whose rate map over that direction's laps "
+            "peaks at 5 Hz or more; candidate events are "
+            "ripple_detection.literature_methods.diba_2007 (60 ms of silence "
+            "of that direction's place cells, then max(5, 30%) of them firing "
+            "in the next 300 ms, speed at or below 10 cm/s at both ends), kept "
+            "when wholly inside a reward area (within 21 cm of a track end); "
+            "each event is judged with replay.methods.DIBA_BUZSAKI_2007 (first "
+            "spike, 500 cell-identity shuffles, two-sided p < 0.1) against its "
+            "direction's template, and an event found for both directions "
+            "(overlapping windows) is assigned as the preset's template_choice "
+            "does: among templates on which it is significant, the one with "
+            "more active cells, then larger |rho|. A significant event with "
+            "rho > 0 is forward, with rho < 0 reverse; it is 'before the run' "
+            "when it lies at the start end of its template's direction and "
+            "'after the run' at the far end. Reproduced when, pooled over the "
+            "segments, more than half the significant forward events are "
+            "before the run and more than half the significant reverse events "
+            "are after it, each with a one-sided binomial p < 0.05 against one "
+            "half; seed 2007. rho is read against the run's firing order, the "
+            "paper's template (a sign bug in the first run read it against "
+            "position, reversing the decreasing direction). Not met: 18 of 29 "
+            "forward before the run (62.1%, p = 0.13); 40 of 45 reverse after "
+            "it (88.9%, p < 1e-7)"
+        ),
+        "parameters": (
+            "hc-3's pyramidal units; compute_spatial_rates (diffusion_kde, 5 cm) "
+            "on rec.env over each direction's laps; place cells: 13 and 11 per "
+            "direction on the long track, 14 and 9 on the short; detection on "
+            "a 1 kHz grid; 714 events (224 long, 490 short); long track 4/8 "
+            "forward before, 11/12 reverse after; short track 14/21 and 29/33"
+        ),
+        "differs": REPLAY_CHECK["why"],
+    },
+    "why": (
+        "the reverse half reproduces (88.9% after the run, paper 85%), the "
+        "forward half does not (62.1% before it, paper 95%, p = 0.13), and with "
+        "hc-3's units the significant events are no more than chance; Diba's "
+        "own sorting of the same session restores the excess of significant "
+        "events (22.6%) but not the forward share (57.4%). One session has "
+        "positions, so the paper's pooled numbers cannot be approached"
+    ),
 }
 
 #: Findings computed from the data that each verified session must report.
@@ -366,7 +465,11 @@ def load_session(
             )
     units = pd.DataFrame(rows, index=pd.Index(ids, name="unit_id"))
     listed = {key for key in tables.cell_types if key[0] == topdir}
-    absent = sorted(listed - {(topdir, *map(int, uid.split("."))) for uid in ids})
+    seen = {
+        (topdir, int(shank), int(cluster))
+        for shank, cluster in (uid.split(".") for uid in ids)
+    }
+    absent = sorted(listed - seen)
     unlisted = int(units["label"].isna().sum())
     lfp = _lfp_source(entry, folder, acquisition, regions)
     animal = topdir.split("-", 1)[0]
@@ -579,7 +682,8 @@ def read_lfp(
     (path,) = sources
     picks = tuple(int(name.removeprefix("ch")) for name in channels)
     stored = read_eeg(path, n_channels, picks)
-    return stored * microvolts_per_bit, np.arange(len(stored)) / rate
+    samples = np.asarray(stored, dtype=np.float64) * microvolts_per_bit
+    return samples, np.arange(len(stored)) / rate
 
 
 def _lfp_source(
@@ -734,8 +838,8 @@ def _with_positions(
                 "inferred",
                 "the file's spike times (Diba's sorting of the same recording) "
                 "coincide with hc-3's: 95.3% of its 258,427 spikes fall within 1 µs "
-                "of an hc-3 detected spike of this session, against 18% with a "
-                "0.1 s shift either way",
+                "of an hc-3 detected spike of this session, against none shifted "
+                "0.1 s either way and 3.0% shifted 1 s",
             ),
             Conversion(
                 f"epochs: 'long_track' and 'short_track', pos2d's two support "

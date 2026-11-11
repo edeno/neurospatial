@@ -56,7 +56,7 @@ class Acquisition(NamedTuple):
     @property
     def microvolts_per_bit(self) -> float:
         """The voltage of one integer step at the electrode, µV."""
-        return self.voltage_range / 2**self.n_bits / self.amplification * 1e6
+        return float(self.voltage_range / 2**self.n_bits / self.amplification * 1e6)
 
 
 def read_acquisition(path: str | os.PathLike[str]) -> Acquisition:

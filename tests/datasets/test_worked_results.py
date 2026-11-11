@@ -12,7 +12,7 @@ code.
 Sargolini et al. (2006), Valero et al. (2022) and Forli et al. (2025) have
 no test: their ``WORKED_RESULT`` says why a result is not possible yet.
 Bhattarai et al. (2020), Carey et al. (2019), Igata et al. (2021), Huszar et
-al. (2022), Pfeiffer & Foster (2013), Ólafsdóttir et al. (2016), Shin et al. (2019)
+al. (2022), Diba & Buzsáki (2007), Pfeiffer & Foster (2013), Ólafsdóttir et al. (2016), Shin et al. (2019)
 and Tirole et al. (2022) are tested in their own files (``test_bhattarai_2020.py``,
 ``test_tirole_2022_replay.py`` and so on),
 which pin
@@ -29,6 +29,7 @@ from neurospatial.datasets import (
     bhattarai_2020,
     carey_2019,
     comrie_2026,
+    diba_2007,
     forli_2025,
     grosmark_2016,
     huszar_2022,
@@ -345,6 +346,7 @@ ALL = [
     bhattarai_2020,
     carey_2019,
     comrie_2026,
+    diba_2007,
     forli_2025,
     grosmark_2016,
     huszar_2022,

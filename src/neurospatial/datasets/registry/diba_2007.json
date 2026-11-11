@@ -1275,7 +1275,7 @@
    "n_units": 87,
    "paper_session": true,
    "paper_link": "inferred: listed among the 18 linear-track sessions of Maboudi et al. 2018 (Figure2.ipynb output), 'previously used by [Diba and Buzsáki, 2007]'",
-   "verification": "read 2026-11-11: 87 clusters from 2 up on 12 shanks, every one in hc-3's cell table for gor01-6-7 (3 listed units have no spike here); the last spike at 2587.80 s against hc-3's 2587.808 s session length; fig1.nel's 258,427 spike times fall within 1 us of an hc-3 detected spike for 95.3% (18% at a 0.1 s shift); its pos2d spans 2 segments, 0-1179.98 s and 1250.00-2579.98 s, as nelpy's hc-3 table gives them",
+   "verification": "read 2026-11-11: 87 clusters from 2 up on 12 shanks, every one in hc-3's cell table for gor01-6-7 (3 listed units have no spike here); the last spike at 2587.80 s against hc-3's 2587.808 s session length; fig1.nel's 258,427 spike times fall within 1 us of an hc-3 detected spike for 95.3% (none shifted 0.1 s, 3.0% shifted 1 s); its pos2d support is 2 intervals, 0-1180 s and 1250-2580 s, as nelpy's hc-3 table gives them",
    "members": [
     {
      "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.1",
