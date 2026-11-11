@@ -44,6 +44,7 @@ The last column says how far each dataset's result was checked.
 | [`bhattarai_2020`](../datasets/bhattarai_2020.md) | rat, dorsal CA1 | loop with two rings, four sequences to one reward; one LFP channel | Figshare 10032866 (CC0) | not possible yet; the paper's replay recipe on the archive's one LFP channel passes 37 candidates against the paper's 278 on the default set, and 11 judged replay (29.7%) only just clears its sanity check (24.6% at the 95th percentile with permuted cells); planted replay is judged 18.6% of the time, so this is no rate of replay; the complex-spike rule gives the paper's 648 of 698 units |
 | [`huszar_2022`](../datasets/huszar_2022.md) | mouse, CA1 | figure-eight maze with sleep; LFP for 12 sessions | DANDI 000552 (CC-BY-4.0) | tested against chance of our own analysis, not the paper's: 5 of 20 awake ripple candidates are judged trajectories, none in 40 shifted-spike draws (20 candidates give no rate, a null of zeros cannot show calibration, and this judge passes 8.7% of planted replay) |
 | [`carey_2019`](../datasets/carey_2019.md) | rat, dorsal CA1 | T-maze with food and water arms, rest pedestals; LFP per channel | DataLad MotivationalT (ODC-PDDL-1.0) | tested against chance, **not met**: on the route of the paper's code, 41 sequences on 1,328 candidates against a null 95th percentile of 52.35, with 5.8% of planted replay found, so it cannot show whether these events hold replay. Detection matches: our score matches the paper's stored score (r = 0.9999997); 73.5% and 91.6% agreement with its 1,654 events, 98.6% and 97.2% with its speed and theta |
+| [`shin_2019`](../datasets/shin_2019.md) | rat, dorsal CA1 and prefrontal cortex | W-maze learned in one day, 8 run sessions between rest; LFP of every tetrode | DANDI 000978 (CC-BY-4.0), read by byte range | not possible yet; the paper's per-visit counts on its six rats meet five of six marks fixed before the run: 9.46 s of immobility, 6.68 SWRs, 2.98 candidates and 1.02 replay events per visit (paper 10.3, 7.3, 2.3, 0.9), but 75.5% of visits with two or more SWRs against 85.7%. The beam times, interneuron labels and ripple tetrodes the paper used are not in the files |
 
 Each dataset has a page with what was recorded, the conversions the loader
 applied and the evidence for them, the pitfalls, the worked result and how to
@@ -303,7 +304,10 @@ channels, one 53 MB in memory and all of them 405 GB, and
 184 GB, which `stream=True` reads by byte range. Five datasets have an LFP:
 `forli_2025`, `igata_2021` (every tetrode of the session, read from its own
 files), `bhattarai_2020` (one channel), `carey_2019` (each channel from its own
-file) and `huszar_2022` (12 sessions).
+file) and `huszar_2022` (12 sessions). [`shin_2019`](../datasets/shin_2019.md)
+holds the LFP of every tetrode inside its 28 to 47 GB files, which are never
+downloaded: `rec.lfp.fetch(channels, stream=True)` reads 14 to 24 GB however
+few channels you ask for, so ask for all you need in one call.
 
 ## Move to pynapple or NWB
 
