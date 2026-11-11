@@ -70,8 +70,11 @@ _NEV_RECORD = np.dtype(
     ]
 )
 _US = 1e-6
-#: MClust's timestamp unit, s.
-_TICK = 1e-4
+#: MClust's timestamps per second. Seconds are ticks / 10,000, the correctly
+#: rounded value and what MClust's and the vandermeerlab ``LoadSpikes.m`` compute;
+#: multiplying by 1e-4 (not exactly representable) is off by one bit for many
+#: ticks, which moves spikes that sit on a time-bin edge.
+_TICKS_PER_SECOND = 10_000.0
 
 
 class VideoTrack(NamedTuple):
@@ -238,4 +241,4 @@ def read_spike_times(path: str | os.PathLike[str]) -> NDArray[np.float64]:
     """
     words = _spike_words(path)
     ticks = words[1::2] if is_64_bit(words) else words
-    return ticks.astype(np.float64) * _TICK
+    return ticks.astype(np.float64) / _TICKS_PER_SECOND
