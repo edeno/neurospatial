@@ -10,8 +10,9 @@ every known pitfall of the session. Where the dataset publishes the
 session's video, ``rec.video`` is a :class:`VideoSource`: the file, its
 frame times and its pixel-to-cm calibration, fetched only on request. Where
 it publishes the LFP, ``rec.lfp`` is an :class:`LFPSource`: where it is, what
-each channel is, and its unit and clock, also fetched only on request.
-Printing a recording shows its full summary. A
+each channel is, and its unit and clock, also fetched only on request. Where it keeps every detected spike's waveform,
+``rec.marks`` is a :class:`SpikeMarks`: each spike's time, amplitudes and
+cluster, the input of a clusterless decoder. Printing a recording shows its full summary. A
 session whose spikes, events or epochs disagree with the tracking clock, or
 whose positions disagree with the stated apparatus, raises
 :class:`DatasetCheckError` instead.
@@ -26,6 +27,7 @@ from neurospatial.datasets._catalog import catalog
 from neurospatial.datasets._errors import DatasetCheckError, DownloadWarning
 from neurospatial.datasets._lfp import LFPSource
 from neurospatial.datasets._load import fetch_all, load
+from neurospatial.datasets._marks import SpikeMarks
 from neurospatial.datasets._recording import Conversion, Provenance, Recording
 from neurospatial.datasets._video import VideoSource
 
@@ -36,6 +38,7 @@ __all__ = [
     "LFPSource",
     "Provenance",
     "Recording",
+    "SpikeMarks",
     "VideoSource",
     "catalog",
     "fetch_all",

@@ -27,6 +27,29 @@
   beforehand (80% agreement and kappa 0.6), is not met; the presets' notes
   give these numbers.
 
+### Datasets: `olafsdottir_2016`, Axona files and every spike's marks
+
+- `load("olafsdottir_2016")` gives the 10 recording days of Ólafsdóttir,
+  Carpenter & Barry (2016), Zenodo 5566548: dorsal CA1 and deep MEC tetrodes on
+  a Z-track, then the rest, and on some days the open field, on one clock. The
+  members of the 9.9 GB zip a day needs (0.3 to 1.2 GB) are read by byte range;
+  the 4.8 kHz LFP comes with `rec.lfp.fetch`. The Z-track is fitted to the
+  running samples as a track graph; runs are `rec.trials`, with their
+  direction. The docs page says which of the paper's sessions each day may be,
+  and that all of the paper's replay is from the rest, none from the track.
+- Readers for Axona dacqUSB files (tetrode spike files, `.pos`, `.eeg`/`.egf`,
+  `.set`) and Tint `.cut` and KlustaKwik `.clu` files, from Axona's
+  file-format document.
+- `Recording.marks` (`SpikeMarks`): for a dataset that keeps every detected
+  spike's waveform, each electrode's spike times, peak amplitude on each
+  channel in microvolts, and the authors' cluster, the inputs of a clusterless
+  decoder; `rec.marks.waveforms(electrode)` reads the waveforms on request.
+- `scripts/build_dataset_registry.py` builds a registry read from members of
+  one remote zip, hashing each member by byte range.
+- The `OLAFSDOTTIR_2016` notes say how the paper's Supplementary Software
+  (`lineTraj_decode.m`, `decode_calcPosterior.m`) differs from the preset, and
+  how many verdicts that changes on real events.
+
 ### Documentation: measured false-positive rates of published nulls
 
 - The notes of `TIROLE_2022`, `OLAFSDOTTIR_2015`, `BUSH_2022`,

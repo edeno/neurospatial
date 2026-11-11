@@ -46,12 +46,29 @@ Usage
 Without ``--version`` the latest published version is pinned (never
 ``draft``); a change of version is printed, since every session must then be
 checked again.
+
+A dataset read from members of one remote zip (Zenodo 5566548 for
+``olafsdottir_2016``) gives ``archive.zip`` (its ``url``, ``sha256`` and
+``size_bytes``) instead of ``archive.dandiset``. Its loader's
+``session_members(names)`` says which members each session reads and which hold
+its LFP. The script lists the zip's members by byte range and hashes each (a
+member the registry already lists with the same path and size keeps its
+SHA-256; ``--known`` gives hashes computed elsewhere, as ``{"members": {path:
+{"sha256", "size_bytes"}}}``), then writes each session's ``members`` and
+``lfp_files``, keeping the hand-set fields as for DANDI.
+
+    uv run python scripts/build_dataset_registry.py olafsdottir_2016 \
+        --known hashes.json
 """
 
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import hashlib
+import importlib
 import json
+import struct
 import urllib.request
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -259,14 +276,167 @@ def _videos(
     return videos
 
 
+#: Members hashed at once, each by its own HTTP range requests.
+HASH_WORKERS = 6
+#: Bytes read per range request while hashing a member.
+HASH_BLOCK = 16 << 20
+
+ZipSessions = Callable[[list[str]], dict[str, tuple[list[str], list[str]]]]
+
+
+def zip_listing(url: str) -> dict[str, tuple[int, int, int]]:
+    """Each member of the remote zip at ``url``: its size, header offset and method."""
+    import zipfile
+
+    import fsspec
+
+    with (
+        fsspec.open(url, "rb", block_size=4 << 20) as remote,
+        zipfile.ZipFile(remote) as archive,
+    ):
+        return {
+            info.filename: (info.file_size, info.header_offset, info.compress_type)
+            for info in archive.infolist()
+        }
+
+
+def _range(url: str, start: int, stop: int) -> bytes:
+    """Bytes ``start`` to ``stop`` (exclusive) of ``url``."""
+    request = urllib.request.Request(
+        url,
+        headers={"Range": f"bytes={start}-{stop - 1}", "User-Agent": "neurospatial"},
+    )
+    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        data: bytes = response.read()
+    if len(data) != stop - start:
+        msg = f"{url}: asked for {stop - start} bytes from {start}, got {len(data)}"
+        raise ValueError(msg)
+    return data
+
+
+def member_sha256(url: str, name: str, size: int, offset: int, method: int) -> str:
+    """The SHA-256 of one stored (uncompressed) member of the remote zip at ``url``."""
+    if method != 0:
+        msg = f"{name}: a compressed member cannot be hashed by range; extract it"
+        raise ValueError(msg)
+    header = _range(url, offset, offset + 30)
+    name_length, extra_length = struct.unpack("<HH", header[26:30])
+    start = offset + 30 + name_length + extra_length
+    digest = hashlib.sha256()
+    for at in range(start, start + size, HASH_BLOCK):
+        digest.update(_range(url, at, min(at + HASH_BLOCK, start + size)))
+    return digest.hexdigest()
+
+
+def build_zip(
+    registry: Mapping[str, Any],
+    sizes: Mapping[str, int],
+    session_members: ZipSessions,
+    sha256_of: Callable[[str], str],
+) -> dict:
+    """The registry's sessions, each read from members of the archive's zip.
+
+    Parameters
+    ----------
+    registry : Mapping
+        The registry as written, with ``archive.zip``.
+    sizes : Mapping of str to int
+        Each member of the zip and its size.
+    session_members : callable
+        The loader's ``session_members``: each session's load and LFP members.
+    sha256_of : callable
+        The SHA-256 of a member the registry does not already list at its size.
+
+    Returns
+    -------
+    dict
+        ``registry`` with ``sessions`` rebuilt. Each keeps its hand-set fields,
+        reset as for DANDI when one of its members changed.
+    """
+    archive = registry["archive"]
+    zipped = archive["zip"]
+    rows = {entry["session"]: entry for entry in registry.get("sessions", [])}
+    listed = {
+        member.get("member", member["path"]): member
+        for entry in rows.values()
+        for member in [*entry.get("members", ()), *entry.get("lfp_files", ())]
+    }
+    days = session_members(sorted(sizes))
+    wanted = sorted(
+        name
+        for load, lfp in days.values()
+        for name in [*load, *lfp]
+        if not (name in listed and listed[name].get("size_bytes") == sizes[name])
+    )
+    with concurrent.futures.ThreadPoolExecutor(HASH_WORKERS) as pool:
+        hashed = dict(zip(wanted, pool.map(sha256_of, wanted), strict=True))
+
+    def member(name: str) -> dict[str, Any]:
+        sha256 = hashed[name] if name in hashed else listed[name]["sha256"]
+        return {"path": name, "sha256": sha256, "size_bytes": sizes[name]}
+
+    sessions = []
+    for session, (load, lfp) in days.items():
+        old = rows.get(session, {})
+        hand = {key: old.get(key, value) for key, value in HAND_FIELDS.items()}
+        members = [member(name) for name in load]
+        before = {m["path"]: m["sha256"] for m in old.get("members", ())}
+        if before and before != {m["path"]: m["sha256"] for m in members}:
+            hand.update({key: HAND_FIELDS[key] for key in FILE_HAND_FIELDS})
+            print(f"{session}: reset to unverified; its members changed")
+        lfp_files = [
+            {**member(name), "path": f"{session}/{Path(name).name}", "member": name}
+            for name in lfp
+        ]
+        sessions.append(
+            {
+                "session": session,
+                "archive": archive["name"],
+                "url": zipped["url"],
+                "file_name": zipped["file_name"],
+                "sha256": zipped["sha256"],
+                "size_bytes": zipped["size_bytes"],
+                **hand,
+                "members": members,
+                "lfp_files": lfp_files,
+            }
+        )
+    if missing := sorted(set(rows) - set(days)):
+        msg = f"sessions {missing} are not in the zip"
+        raise ValueError(msg)
+    return {**registry, "sessions": sessions}
+
+
 def main() -> None:
     """Rewrite one registry from the command line."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("dataset", help="dataset id, e.g. sargolini_2006")
     parser.add_argument("--version", help="DANDI version to pin; default the latest")
+    parser.add_argument("--known", help="JSON of member hashes computed elsewhere")
     args = parser.parse_args()
     path = REGISTRY / f"{args.dataset}.json"
     registry = json.loads(path.read_text(encoding="utf-8"))
+    if "zip" in registry["archive"]:
+        url = registry["archive"]["zip"]["url"]
+        known = (
+            json.loads(Path(args.known).read_text(encoding="utf-8"))["members"]
+            if args.known
+            else {}
+        )
+        loader = importlib.import_module(f"neurospatial.datasets.{args.dataset}")
+        listing = zip_listing(url)
+
+        def sha256_of(name: str) -> str:
+            size, offset, method = listing[name]
+            if name in known and known[name]["size_bytes"] == size:
+                return str(known[name]["sha256"])
+            return member_sha256(url, name, size, offset, method)
+
+        sizes = {name: row[0] for name, row in listing.items()}
+        built = build_zip(registry, sizes, loader.session_members, sha256_of)
+        path.write_text(json.dumps(built, indent=2) + "\n", encoding="utf-8")
+        print(f"{path.relative_to(ROOT)}: {len(built['sessions'])} sessions")
+        return
     dandiset = registry["archive"]["dandiset"]
     version = args.version or latest_published(dandiset)
     pinned = registry["archive"].get("version")

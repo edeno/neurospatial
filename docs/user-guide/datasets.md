@@ -45,6 +45,7 @@ The last column says how far each dataset's result was checked.
 | [`huszar_2022`](../datasets/huszar_2022.md) | mouse, CA1 | figure-eight maze with sleep; LFP for 12 sessions | DANDI 000552 (CC-BY-4.0) | tested against chance of our own analysis, not the paper's: 5 of 20 awake ripple candidates are judged trajectories, none in 40 shifted-spike draws (20 candidates give no rate, a null of zeros cannot show calibration, and this judge passes 8.7% of planted replay) |
 | [`pfeiffer_2013`](../datasets/pfeiffer_2013.md) | rat, dorsal CA1 | 2 m open arena with 36 reward wells; one session; the author's own candidate windows and significance labels | sample recording released with Maboudi et al. 2018 (license not stated) | not possible yet; `PFEIFFER_FOSTER_2015` agrees with Pfeiffer's own labels on 82.0% of his 322 windows, kappa 0.569 against the 0.6 fixed beforehand; 43 of the 45 he labels and it rejects decode here to paths shorter than 80 cm |
 | [`carey_2019`](../datasets/carey_2019.md) | rat, dorsal CA1 | T-maze with food and water arms, rest pedestals; LFP per channel | DataLad MotivationalT (ODC-PDDL-1.0) | tested against chance, **not met**: on the route of the paper's code, 41 sequences on 1,328 candidates against a null 95th percentile of 52.35, with 5.8% of planted replay found, so it cannot show whether these events hold replay. Detection matches: our score matches the paper's stored score (r = 0.9999997); 73.5% and 91.6% agreement with its 1,654 events, 98.6% and 97.2% with its speed and theta |
+| [`olafsdottir_2016`](../datasets/olafsdottir_2016.md) | rat, dorsal CA1 and deep MEC | Z-shaped track (track graph), then a rest enclosure and an open field; every spike's amplitudes for clusterless decoding; LFP per channel | Zenodo 5566548 (CC-BY-4.0) | not possible yet: on the default day 60.9% of the rest's candidate events are judged replay against the paper's pooled 41.7% (a band of 31.7% to 51.7% fixed beforehand), and the paper's own line-fit code, ported, gives about the same (91 of 150 against 93); the paper gives no share per session. All of its replay is from the rest, none awake on the track |
 
 Each dataset has a page with what was recorded, the conversions the loader
 applied and the evidence for them, the pitfalls, the worked result and how to
@@ -301,10 +302,19 @@ detection, where it states them. `rec.lfp.unit_basis` and
 Ask for the channels you need: [`forli_2025`](../datasets/forli_2025.md) holds 384
 channels, one 53 MB in memory and all of them 405 GB, and
 [`huszar_2022`](../datasets/huszar_2022.md)'s LFP sits in raw files of up to
-184 GB, which `stream=True` reads by byte range. Five datasets have an LFP:
+184 GB, which `stream=True` reads by byte range. Six datasets have an LFP:
 `forli_2025`, `igata_2021` (every tetrode of the session, read from its own
 files), `bhattarai_2020` (one channel), `carey_2019` (each channel from its own
-file) and `huszar_2022` (12 sessions).
+file), `huszar_2022` (12 sessions) and `olafsdottir_2016` (the two or three
+wires the recording saved at 4.8 kHz, each trial's file joined on the day's
+clock).
+
+`olafsdottir_2016` also keeps every spike that crossed the detection threshold,
+sorted or not. `rec.marks` holds, per tetrode, each spike's time, its largest
+sample on each wire in microvolts and the authors' cluster (-1 where the trial
+was not sorted): `rec.marks.select("T10", rec.epochs["rest"])` gives the times
+and amplitudes a clusterless decoder takes, and `rec.marks.waveforms("T10")`
+reads the full waveforms from the cached files.
 
 ## Move to pynapple or NWB
 

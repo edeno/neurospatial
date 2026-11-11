@@ -40,8 +40,8 @@ def summary_text(rec: Recording) -> str:
     -------
     str
         The identity lines, then the labelled sections Time, Epochs,
-        Tracking, Environment, Neurons, LFP (where the dataset publishes it)
-        and Watch out, one line each or more.
+        Tracking, Environment, Neurons, LFP and Marks (where the dataset
+        publishes them) and Watch out, one line each or more.
     """
     lines = [
         *_identity(rec),
@@ -51,6 +51,7 @@ def summary_text(rec: Recording) -> str:
         *_labelled("Environment", _environment(rec)),
         *_labelled("Neurons", _neurons(rec)),
         *_labelled("LFP", _lfp(rec)),
+        *_labelled("Marks", _marks(rec)),
         *_watch_out(rec),
     ]
     return "\n".join(lines)
@@ -184,6 +185,19 @@ def _lfp(rec: Recording) -> list[str]:
     return [
         f"{n_channels} {named} at {rec.lfp.sampling_rate:g} Hz, "
         f"{_size(rec.lfp.size_bytes)}, fetched on request -> {call}"
+    ]
+
+
+def _marks(rec: Recording) -> list[str]:
+    if rec.marks is None:
+        return []
+    marks = rec.marks
+    n_sorted = sum(int(np.sum(c >= 0)) for c in marks.clusters)
+    return [
+        f"{marks.n_spikes:,} detected spikes on {len(marks.electrodes)} electrodes, "
+        f"{n_sorted:,} of them in a sorted trial; peak amplitude per channel "
+        f"({marks.unit}) -> rec.marks.select(electrode)",
+        f"waveforms read on request -> rec.marks.waveforms({marks.electrodes[0]!r})",
     ]
 
 

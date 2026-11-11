@@ -12,7 +12,8 @@ code.
 Sargolini et al. (2006), Valero et al. (2022) and Forli et al. (2025) have
 no test: their ``WORKED_RESULT`` says why a result is not possible yet.
 Bhattarai et al. (2020), Carey et al. (2019), Igata et al. (2021), Huszar et
-al. (2022) and Pfeiffer & Foster (2013) are tested in their own files (``test_bhattarai_2020.py`` and so on),
+al. (2022), Pfeiffer & Foster (2013) and Ólafsdóttir et al. (2016) are tested
+in their own files (``test_bhattarai_2020.py`` and so on),
 which pin
 their recorded numbers; this file checks only that their records are complete.
 """
@@ -32,6 +33,7 @@ from neurospatial.datasets import (
     huszar_2022,
     igata_2021,
     load,
+    olafsdottir_2016,
     peyrache_2015,
     pfeiffer_2013,
     sargolini_2006,
@@ -344,6 +346,7 @@ ALL = [
     grosmark_2016,
     huszar_2022,
     igata_2021,
+    olafsdottir_2016,
     peyrache_2015,
     pfeiffer_2013,
     sargolini_2006,
