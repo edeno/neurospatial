@@ -2207,7 +2207,6 @@ class _RadonScorer(_Scorer):
         zero_rows: str = "refuse",
         n_lines: int | None = None,
         rng: np.random.Generator | int | None = 0,
-        min_on_track: float = 0.0,
     ) -> None:
         self.lines, self.posterior = _prepare_replay_lines(
             env,
@@ -2222,7 +2221,6 @@ class _RadonScorer(_Scorer):
             zero_rows=zero_rows,
             n_lines=n_lines,
             rng=rng,
-            min_on_track=min_on_track,
             operation=_OPERATION,
         )
 

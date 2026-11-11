@@ -2,19 +2,6 @@
 
 ## [Unreleased]
 
-### Replay: `OLAFSDOTTIR_2016` follows the paper's own line-fit code
-
-- `detect_trajectory_radon` (and the radon score of `detect_replay` and
-  `replay_significance`) takes `off_track="zero"`, where a time bin with the
-  line beyond the track adds nothing, and `min_on_track`, the least share of
-  time bins a line must lie on the track to be scored.
-- **Behavior change:** `OLAFSDOTTIR_2016` now runs as the paper's
-  Supplementary Software (`lineTraj_decode.m`, `decode_calcPosterior.m`)
-  does: speeds from 1 m/s (the text says 2), the posterior zero-padded beyond
-  the track, lines on it for under a third of the time bins discarded, and
-  time bins without spikes dropped (the code sets them to zero and divides by
-  the summed probability). Its replay calls on the same events change.
-
 ### Documentation: measured false-positive rates of published nulls
 
 - The notes of `TIROLE_2022`, `OLAFSDOTTIR_2015`, `BUSH_2022`,

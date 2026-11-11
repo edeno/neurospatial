@@ -549,17 +549,10 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
         ReplayMethod,
         {
             "score": "detect_trajectory_radon",
-            "score_options": {
-                "band": 30.0,
-                "max_speed": 5000.0,
-                "min_speed": 100.0,
-                "off_track": "zero",
-                "min_on_track": 1 / 3,
-            },
+            "score_options": {"band": 30.0, "max_speed": 5000.0, "min_speed": 200.0},
             "nulls": ("place_field_circular",),
             "n_shuffles": 100,
             "alpha": 0.2,
-            "empty_time_bins": "drop",
             "criteria": (("active_fraction", ">=", 0.15, None, False),),
             "units": "cm",
             "template_choice": "smallest_p",

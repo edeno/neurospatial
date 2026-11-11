@@ -1608,11 +1608,10 @@ def detect_trajectory_radon(
     min_speed: float = 0.0,
     wrap: bool = False,
     line_ends: Literal["any", "on_track"] = "any",
-    off_track: Literal["band_median", "bin_median", "zero"] = "band_median",
+    off_track: Literal["band_median", "bin_median"] = "band_median",
     zero_rows: Literal["refuse", "line_median"] = "refuse",
     n_lines: int | None = None,
     rng: np.random.Generator | int | None = 0,
-    min_on_track: float = 0.0,
 ) -> RadonDetectionResult:
     """Detect the constant-speed replay trajectory in a decoded event.
 
@@ -1678,15 +1677,13 @@ def detect_trajectory_radon(
         extends beyond an end of the track holds the time bin's median
         posterior density over the bins (see Notes). Not available with
         ``wrap=True``: a loop has no ends.
-    off_track : {"band_median", "bin_median", "zero"}, default="band_median"
+    off_track : {"band_median", "bin_median"}, default="band_median"
         What a time bin where the trajectory lies beyond the ends of the
         track contributes. ``"band_median"`` (Davidson et al. 2009): the
         median, over positions on the track, of the posterior mass within
         ``band`` of the position. ``"bin_median"`` (Maboudi et al. 2018):
         the median, over the track's bins, of the time bin's posterior mass
-        in one bin, much smaller than a band's mass. ``"zero"``
-        (Ólafsdóttir et al. 2016, ``lineTraj_decode.m``, which pads the
-        posterior with zeros beyond the track): nothing. Only with
+        in one bin, much smaller than a band's mass. Only with
         ``line_ends="any"`` on an open track, where trajectories can leave
         the track.
     zero_rows : {"refuse", "line_median"}, default="refuse"
@@ -1713,14 +1710,6 @@ def detect_trajectory_radon(
         ``np.random.default_rng``. The default seed makes a search
         reproducible; events with the same numbers of time bins and bins
         draw the same lines.
-    min_on_track : float, default=0.0
-        The least share of the time bins at which a trajectory lies on the
-        track for it to be scored; trajectories on the track at fewer are
-        not searched (NaN in the sinogram). Ólafsdóttir et al. (2016,
-        ``lineTraj_decode.m``) discard lines on the posterior for fewer than a
-        third of its time bins, "to avoid situations where a line just cuts
-        through a small section": 1 / 3. The default searches every
-        trajectory on the track at some time bin.
 
     Returns
     -------
@@ -1749,8 +1738,7 @@ def detect_trajectory_radon(
         track (``wrap=True`` or ``line_ends="on_track"``); if ``n_lines`` is
         not a positive integer or ``rng`` an int below 0,
         or if no random line is both within the speed range and on the
-        track; if no speed of the dense grid reaches ``min_speed``; if
-        ``min_on_track`` is outside [0, 1].
+        track; if no speed of the dense grid reaches ``min_speed``.
 
     See Also
     --------
@@ -1935,14 +1923,13 @@ def detect_trajectory_radon(
         zero_rows=zero_rows,
         n_lines=n_lines,
         rng=rng,
-        min_on_track=min_on_track,
         operation="detect_trajectory_radon()",
     )
     return _best_line(lines, posterior)
 
 
 _LINE_ENDS = ("any", "on_track")
-_OFF_TRACK = ("band_median", "bin_median", "zero")
+_OFF_TRACK = ("band_median", "bin_median")
 _ZERO_ROWS = ("refuse", "line_median")
 # Inside _reusing_replay_lines(): the key and lines of the latest search.
 _REUSED_LINES: ContextVar[list[Any] | None] = ContextVar("_REUSED_LINES", default=None)
@@ -2026,7 +2013,6 @@ def _prepare_replay_lines(
     zero_rows: str = "refuse",
     n_lines: int | None = None,
     rng: np.random.Generator | int | None = 0,
-    min_on_track: float = 0.0,
     operation: str,
 ) -> tuple[_ReplayLines, NDArray[np.float64]]:
     """Validate a replay line search and build its scorer.
@@ -2042,15 +2028,6 @@ def _prepare_replay_lines(
     from neurospatial.environment import _require_track_extents
 
     _check_line_options(wrap, line_ends, off_track, zero_rows, n_lines, rng, operation)
-    if not (np.isfinite(min_on_track) and 0.0 <= min_on_track <= 1.0):
-        raise ValueError(
-            _format_error(
-                f"{operation} got min_on_track={min_on_track!r}.",
-                why="it is the least share of time bins a trajectory lies on "
-                "the track at",
-                fix="pass a number from 0 to 1, e.g. 1 / 3",
-            )
-        )
     # Validates the environment and the posterior rows.
     _, starts, stops = _track_positions(
         env, posterior, operation, allow_zero_rows=zero_rows == "line_median"
@@ -2111,7 +2088,7 @@ def _prepare_replay_lines(
         key = (
             *(np.asarray(values).tobytes() for values in arrays),
             *(band, speed_bound, min_speed, wrap, line_ends, off_track),
-            *(zero_rows, n_lines, line_stream, min_on_track),
+            *(zero_rows, n_lines, line_stream),
         )
         if reused and reused[0] == key:
             return reused[1], posterior
@@ -2130,7 +2107,6 @@ def _prepare_replay_lines(
         zero_rows=zero_rows,
         n_lines=None if n_lines is None else int(n_lines),
         line_stream=line_stream,
-        min_on_track=float(min_on_track),
     )
     if reused is not None:
         reused[:] = [key, lines]
@@ -2182,11 +2158,11 @@ def _check_line_options(
     ):
         if count is not None:
             validate_integer_at_least(count, smallest, name=name, owner=operation)
-    if off_track != "band_median" and (wrap or line_ends == "on_track"):
+    if off_track == "bin_median" and (wrap or line_ends == "on_track"):
         setting = "wrap=True" if wrap else "line_ends='on_track'"
         raise ValueError(
             _format_error(
-                f"{operation} got off_track={off_track!r} with {setting}.",
+                f"{operation} got off_track='bin_median' with {setting}.",
                 why=f"with {setting} every searched trajectory stays on the "
                 "track, so off_track would change nothing",
                 fix="leave off_track at its default, or search trajectories "
@@ -2303,9 +2279,7 @@ class _ReplayLines:
     and last time bins are scored, band beyond an end of the track holds the
     time bin's median posterior density, and each time bin's band mass is
     capped at 1. With ``off_track="bin_median"`` a time bin off the track
-    holds its median mass per bin instead, and with ``off_track="zero"``
-    nothing. With ``min_on_track`` only trajectories on the track at that
-    share of the time bins are scored. With ``zero_rows="line_median"``
+    holds its median mass per bin instead. With ``zero_rows="line_median"``
     each all-zero row of an event adds, for each trajectory, the median of
     its band mass over the time bins with mass on the track, divided by the
     number of time bins (see :meth:`_add_line_medians`).
@@ -2331,7 +2305,7 @@ class _ReplayLines:
         Whether the track is a closed loop.
     line_ends : {"any", "on_track"}, default="any"
         Which trajectories are searched (see :func:`detect_trajectory_radon`).
-    off_track : {"band_median", "bin_median", "zero"}, default="band_median"
+    off_track : {"band_median", "bin_median"}, default="band_median"
         What a time bin off the track holds (see
         :func:`detect_trajectory_radon`).
     zero_rows : {"refuse", "line_median"}, default="refuse"
@@ -2340,8 +2314,6 @@ class _ReplayLines:
         None for the dense grid; else the number of random lines.
     line_stream : tuple
         Identity of the random lines' stream, from :func:`_line_stream`.
-    min_on_track : float, default=0.0
-        Least share of time bins on the track for a trajectory to be scored.
     """
 
     # Memory budgets, in array elements of 8 bytes: the nonzeros of one
@@ -2374,10 +2346,8 @@ class _ReplayLines:
         zero_rows: str = "refuse",
         n_lines: int | None = None,
         line_stream: tuple[Any, tuple[int, ...]] = (0, ()),
-        min_on_track: float = 0.0,
     ) -> None:
         self.order = order
-        self.min_on_track = min_on_track
         self.min_speed = min_speed
         self.max_speed = max_speed
         self.elapsed = elapsed
@@ -2628,7 +2598,7 @@ class _ReplayLines:
         n_cumulative = n_time * len(self.knots)
         values = np.zeros((n_cumulative + 2 * n_time + 1, n_events))
         values[:n_cumulative] = cumulative.reshape(n_events, -1).T
-        if not self.wrap and self.line_ends == "any" and self.off_track != "zero":
+        if not self.wrap and self.line_ends == "any":
             off_track = (
                 np.median(mass, axis=-1)
                 if self.off_track == "bin_median"
@@ -3044,9 +3014,6 @@ class _ReplayLines:
                 if self.line_ends == "on_track"
                 else on_track.any(axis=1)
             )
-            if self.min_on_track > 0:
-                share = on_track.sum(axis=1) / on_track.shape[1]
-                placed &= share >= self.min_on_track - 1e-12
         return position, on_track, in_speed_range, placed
 
     def _block(self, candidates: NDArray[np.intp]) -> _LineBlock:

@@ -4610,11 +4610,9 @@ OLAFSDOTTIR_2017 = ReplayMethod(
         "(10 cm).",
         "Ólafsdóttir et al. (2016) used the same line search with p < 0.2 "
         "for 'robust' events and p < 0.025 for the strongest, choosing the "
-        "direction with the lower p-value. Its Supplementary Software "
-        "(lineTraj_decode.m) searches 1 to 50 m/s, zero-pads the posterior "
-        "beyond the track and discards lines on it for under a third of the "
-        "time bins, which OLAFSDOTTIR_2016 follows; this paper's text repeats "
-        "the 2 m/s bound and does not say whether its code was the same.",
+        "direction with the lower p-value. The Barry-lab Python port differs "
+        "(speeds of 1 to 50 m/s, zero padding off the track, a third of the "
+        "points on the track) and is not confirmed as the lab's code.",
     ),
 )
 
@@ -5073,15 +5071,8 @@ OLAFSDOTTIR_2016 = dataclasses.replace(
         "grid and place cell replay during rest. Nature Neuroscience, 19(6), "
         "792-794. https://doi.org/10.1038/nn.4291"
     ),
-    score_options={
-        "band": 30.0,
-        "max_speed": 5000.0,
-        "min_speed": 100.0,
-        "off_track": "zero",
-        "min_on_track": 1 / 3,
-    },
     alpha=0.2,
-    empty_time_bins="drop",
+    empty_time_bins="keep",
     criteria=(ReplayCriterion("active_fraction", ">=", 0.15),),
     template_choice="smallest_p",
     decoding={
@@ -5090,33 +5081,17 @@ OLAFSDOTTIR_2016 = dataclasses.replace(
         "templates": "inbound and outbound rate maps, decoded separately",
     },
     notes=(
-        "Line fit as the paper's Supplementary Software runs it "
-        "(lineTraj_decode.m, read): the posterior mass within 30 cm of a line "
-        "(the paper's d; the code's band of yRange bins either side), summed "
-        "over time bins and divided by the summed probability, time bins "
-        "without spikes set to 0 (decode_calcPosterior.m). That is the mean "
-        "over the time bins with spikes: empty_time_bins='drop'.",
-        "Speeds from 1 to 50 m/s in either direction: the code's spdBnd = "
-        "[100, 5000] cm/s in 50 cm/s steps, where the Methods exclude speeds "
-        "under 2 m/s; the code is followed. Speeds and start positions are "
-        "searched densely here, and line positions are exact where the code "
-        "rounds them to bins.",
-        "A line beyond the ends of the track adds nothing there: the code "
-        "zero-pads the posterior (off_track='zero'), where Davidson et al. "
-        "give the median. Lines on the posterior for fewer than a third of "
-        "its time bins are discarded (the code's minLgth = size(pMat, 2) / 3; "
-        "min_on_track=1 / 3); with empty time bins dropped the third is of "
-        "the time bins with spikes, where the code counts every time bin.",
-        "The decoder of the code (decode_calcPosterior.m): independent "
-        "Poisson cells with rates + eps^8, each time bin's posterior "
-        "normalized with no prior term, which is the uniform prior over the "
-        "equal 2 cm bins neurospatial's default gives.",
+        "Line fit of Ólafsdóttir et al. (2015): the mean posterior within "
+        "30 cm of a line, speeds from 2 to 50 m/s in either direction in "
+        "0.5 m/s steps and start positions from -15 to 21 m in 1 cm steps "
+        "(searched densely here). Time bins where a line leaves the track "
+        "score the median over positions of Davidson et al.",
         "100 shuffles rotating each place cell's rate map by 1 to n_bins - 1 "
-        "bins, decoded again; here shifts of 0 to n_bins - 1. The "
-        "Supplementary Software has no shuffle code. 'Robust events, with an "
-        "individual P-value of less than 0.2, were accepted as replay "
-        "events': with 100 shuffles, p = (k + 1) / (n + 1) < 0.2 allows at "
-        "most 19 shuffles at least as high, the same as k / 100 < 0.2.",
+        "bins, decoded again; here shifts of 0 to n_bins - 1. 'Robust events, "
+        "with an individual P-value of less than 0.2, were accepted as "
+        "replay events': with 100 shuffles, p = (k + 1) / (n + 1) < 0.2 "
+        "allows at most 19 shuffles at least as high, the same as k / 100 < "
+        "0.2.",
         "Supplementary Fig. 3 marks the 95th percentile of the shuffles as "
         "the threshold for significance, which contradicts the Methods and "
         "main text (p < 0.2 for the 1,826 replay events); the Methods are "
@@ -5129,6 +5104,12 @@ OLAFSDOTTIR_2016 = dataclasses.replace(
         "with the lower p-value: template_choice='smallest_p', with no "
         "correction for the two directions. Pass a mapping of both "
         "directions' posteriors with encoding_models keyed alike.",
+        "Time bins without spikes are not mentioned (the 2017 paper set "
+        "them to zero). They are kept here, reading Eq. 2 as the mean over "
+        "all n time bins; a choice made here. "
+        "dataclasses.replace(OLAFSDOTTIR_2016, empty_time_bins='drop') "
+        "gives the 2017 rule, which under the place-field shuffle has the "
+        "same p-value as zeroing and normalizing by the summed probability.",
         "Events need activity from at least 15% of the recorded place cells "
         "(applied: pass the place cells' counts); the 'more than 5 cells' "
         "rule is the 2017 paper's. Candidate events (place-cell multi-unit "
