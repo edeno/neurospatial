@@ -192,6 +192,11 @@ class SessionEntry:
         Why the session's file is read by byte range rather than downloaded
         (the registry's ``archive.stream_only``), for files too large to keep;
         empty for a file that is downloaded.
+    own_stated : Stated or None
+        The facts the checks compare this session with, where its row states
+        its own (a ``stated`` block whose entries replace the dataset's: a
+        session tracked by other means than the rest); None to use the
+        dataset's. :attr:`stated` gives whichever applies.
     """
 
     info: DatasetInfo
@@ -213,6 +218,12 @@ class SessionEntry:
     videos: tuple[VideoAsset, ...] = ()
     lfp_files: tuple[LFPFile, ...] = ()
     stream_only: str = ""
+    own_stated: Stated | None = None
+
+    @property
+    def stated(self) -> Stated:
+        """The facts the checks compare this session with: its row's, else the dataset's."""
+        return self.info.stated if self.own_stated is None else self.own_stated
 
     @property
     def download_url(self) -> str:
@@ -226,9 +237,19 @@ class SessionEntry:
 
     @property
     def download_bytes(self) -> int:
-        """The bytes a download of the session fetches: its members, or the file."""
+        """The bytes a download of the session fetches: its members, or the file.
+
+        Members of a CRCNS ``.tar.gz`` are read from the archive's start, so
+        fetching them reads up to the whole archive, ``size_bytes``.
+        """
+        from neurospatial.datasets._fetch import crcns_path
+
         if self.members:
-            return sum(member.size_bytes for member in self.members)
+            own = sum(member.size_bytes for member in self.members if member.url)
+            archived = sum(m.size_bytes for m in self.members if m.url is None)
+            if self.url is not None and crcns_path(self.url) is not None:
+                archived = self.size_bytes if archived else 0
+            return own + archived
         return self.size_bytes
 
     def provenance(self, source: str | os.PathLike[str]) -> Provenance:
@@ -328,6 +349,8 @@ def _read(registry: dict[str, Any], name: str) -> tuple[SessionEntry, ...]:
                 row,
                 registry["paper_citation"],
                 stream_only=str(archive.get("stream_only", "")),
+                stated=registry["stated"],
+                registry_name=name,
             )
             for row in registry["sessions"]
         )
@@ -399,12 +422,20 @@ def _archive_name(archive: dict[str, Any]) -> str:
 
 
 def _entry(
-    info: DatasetInfo, row: dict[str, Any], paper: str, *, stream_only: str = ""
+    info: DatasetInfo,
+    row: dict[str, Any],
+    paper: str,
+    *,
+    stream_only: str = "",
+    stated: dict[str, Any] | None = None,
+    registry_name: str = "",
 ) -> SessionEntry:
     """One session row, with its download location and checksums checked.
 
     A row from an archive other than the dataset's gives its own
-    ``license`` and ``data_citation``; a row read from zip members gives
+    ``license`` and ``data_citation``; a row with its own ``stated`` block
+    replaces those entries of the dataset's ``stated``; a row read from zip
+    members gives
     ``members``, each with ``path``, ``sha256`` and ``size_bytes``, and a
     member that is a file of its own also its ``url``. A row with
     an LFP gives ``lfp_files``, each an :class:`LFPFile`'s fields, located at
@@ -466,6 +497,11 @@ def _entry(
         videos=videos,
         lfp_files=lfp_files,
         stream_only=stream_only,
+        own_stated=(
+            _stated({**(stated or {}), **row["stated"]}, registry_name)
+            if "stated" in row
+            else None
+        ),
     )
 
 

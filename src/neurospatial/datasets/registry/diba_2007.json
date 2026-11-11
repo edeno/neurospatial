@@ -1,0 +1,3518 @@
+{
+ "dataset": "diba_2007",
+ "paper": "Diba & Buzsáki (2007)",
+ "paper_citation": "Diba K, Buzsáki G (2007). Forward and reverse hippocampal place-cell sequences during ripples. Nature Neuroscience 10, 1241-1242. https://doi.org/10.1038/nn1961",
+ "species": "rat",
+ "brain_regions": [
+  "dorsal CA1",
+  "dorsal CA3"
+ ],
+ "apparatus": "elevated linear tracks with water at 21 x 21 cm platforms at both ends; also a T-maze, an open field, a running wheel and sleep (hc-3's behaviour of each session)",
+ "license": "CRCNS terms of use (a free crcns.org account; cite the data set)",
+ "archive": {
+  "name": "CRCNS hc-3",
+  "url": "https://crcns.org/data-sets/hc/hc-3",
+  "citation": "Mizuseki K, Sirota A, Pastalkova E, Diba K, Buzsáki G (2013). Multiple single unit recordings from different rat hippocampal and entorhinal regions while the animals were performing multiple behavioral tasks. CRCNS.org. http://dx.doi.org/10.6080/K09G5JRZ; positions of 2006-6-7_16-40-19 from Maboudi K, Ackermann E, de Jong LW, Pfeiffer BE, Foster D, Diba K, Kemere C (2018). Uncovering temporal structure in hippocampal output patterns. eLife 7, e34467. https://doi.org/10.7554/eLife.34467, its sample data/fig1.nel as archived by eLife at https://github.com/elifesciences-publications/UncoveringTemporalStructureHippocampus (commit f1b021dd804347151b1bc10797c4ab09582860a9)"
+ },
+ "stated": {
+  "sampling_rate": {
+   "value": 1252.0,
+   "basis": "stated",
+   "source": "each session's .xml: lfpSamplingRate 1252; without tracking, times are the LFP's sample clock (Diba & Buzsáki 2007: 'low-pass filtering up to 1252 Hz')"
+  },
+  "position_span": null
+ },
+ "sessions": [
+  {
+   "session": "2006-6-12_15-55-31",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/gor01-6-12/2006-6-12_15-55-31.tar.gz",
+   "file_name": "2006-6-12_15-55-31.tar.gz",
+   "sha256": "809a50a86885a06b9b47e74f3a3b904f8b7eb5a1b8bcc7f0536130ef9918504a",
+   "size_bytes": 1194376673,
+   "verified": false,
+   "default": false,
+   "n_units": 47,
+   "paper_session": true,
+   "paper_link": "inferred: listed among the 18 linear-track sessions of Maboudi et al. 2018 (Figure2.ipynb output), 'previously used by [Diba and Buzsáki, 2007]'",
+   "verification": "",
+   "members": [
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.res.1",
+     "sha256": "abb88eaed301fa083c884d677df471106471b97a5a96fdd0c31fa99e2b19bbbf",
+     "size_bytes": 846669
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.clu.1",
+     "sha256": "f043952a8c90ce436863bc7347a63d82b0608a1d0c39a6708f9a5db9f4bb927b",
+     "size_bytes": 194366
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.res.2",
+     "sha256": "fdd14bdbbe4de466fd8f72a8c49a670e2a843853b019e747d773ba489bf0c5d4",
+     "size_bytes": 904136
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.clu.2",
+     "sha256": "d34b2021f9cacd894d05cb65133841a38adc0f923d9d397002e9a16586330358",
+     "size_bytes": 208102
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.res.3",
+     "sha256": "bc620f94fe43f8b2d70e322985c51866f03c323d878b7b26be6cd8625d267a9d",
+     "size_bytes": 739214
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.clu.3",
+     "sha256": "c19404d7b779c3283fd2c3f6be7a2bdfaaf8e20b257b883ce5a5596051ef22bc",
+     "size_bytes": 169656
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.res.4",
+     "sha256": "0a134565ec1531a8c34af5898370edc5fd11b17f31950321ca787cbb5a0f9552",
+     "size_bytes": 860956
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.clu.4",
+     "sha256": "44d4e4251b93914c61cdc663e07da248cba3f61de24e060632dced235e56776b",
+     "size_bytes": 199126
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.res.5",
+     "sha256": "b91d2ae226e1c4194894f12b34e5d746b42315946de86a98ff204d5caf97ccb7",
+     "size_bytes": 280184
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.clu.5",
+     "sha256": "da9e10cdae8e7e64067d1ee8d0af9415f14509b3269053b1b99341272c0dc23e",
+     "size_bytes": 64972
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.res.6",
+     "sha256": "b84aaeafafbe410ea3639e9a3a6cde97957142eeb04fac90e25dc19cb1eb34e6",
+     "size_bytes": 425286
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.clu.6",
+     "sha256": "8b98d78fa553e234a3cbafd206c286973087af580bfa96e46e5b36e41b872599",
+     "size_bytes": 98002
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.res.7",
+     "sha256": "da00df4364365e049cff675a33ca369b118150a0c1704dd330b606e1d5140c6d",
+     "size_bytes": 883639
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.clu.7",
+     "sha256": "815a236352f52577c0d93a80ff3acaa4a5a0e2722fdf2db61aa11fc9eb4ea6f8",
+     "size_bytes": 203652
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.res.8",
+     "sha256": "b430cddefb1bf7d7ec364ae123b34152d64bf0018aea08be593fdaf631d6396b",
+     "size_bytes": 851996
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.clu.8",
+     "sha256": "e8eeee33febe0a1e8b7264c0f4a61ab9958df96ca8e2bf7aac2fffbe2460e4ff",
+     "size_bytes": 236772
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.res.9",
+     "sha256": "909f3b2b2d6534045761c23c2a7e37c65a48202a51ea9f072232d8e3f05802ff",
+     "size_bytes": 1089351
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.clu.9",
+     "sha256": "e64442ede35de8aa0ebaf1a68e78cb0e1e37aef269ea17aaee0d0a046dd60b85",
+     "size_bytes": 251720
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.res.10",
+     "sha256": "84f21e096c4372e8c96c6745ba25fe63bd4307d7a6d9136bc394c66ec1eaf4a1",
+     "size_bytes": 746606
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.clu.10",
+     "sha256": "e8c9eb89ea2ef6c0d466462af021e663fcc8f41a27ae13b8f2248d6439a7536e",
+     "size_bytes": 172424
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.res.11",
+     "sha256": "2d05b627e807db28cb049c7cb380bb4820264b1f4336ba33370e31d3630ae3fb",
+     "size_bytes": 4039370
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.clu.11",
+     "sha256": "8bd1cacd12bc716169806a3a6347e06b2abf8260de6cea9f36b03a37e28fabe6",
+     "size_bytes": 929574
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.res.12",
+     "sha256": "74fe10feddb688898d5dba2c6ae7bca7f015ebbb8ce60a02df4dbf7074fad524",
+     "size_bytes": 1769176
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.clu.12",
+     "sha256": "1905365fd63b1ee8eaddb8e49896b4d42121e557757e65d9522cf1844e163d07",
+     "size_bytes": 409437
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.xml",
+     "sha256": "2e809be5483de733a85e581415f4e3b739832491b15e24bb7cc1e1575c4b891e",
+     "size_bytes": 57243
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-6-12_15-55-31/2006-6-12_15-55-31.eeg",
+     "member": "gor01-6-12/2006-6-12_15-55-31/2006-6-12_15-55-31.eeg",
+     "sha256": "4794fcc77f23777e48a65680fc0e875dfaea12cea84030ca4859827bbecee6e9",
+     "size_bytes": 272589504
+    }
+   ]
+  },
+  {
+   "session": "2006-6-12_16-53-46",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/gor01-6-12/2006-6-12_16-53-46.tar.gz",
+   "file_name": "2006-6-12_16-53-46.tar.gz",
+   "sha256": "31f0405781a47c999c0a741225c17a2f4f0b46e5acf40c57b1ef58a9deaa8746",
+   "size_bytes": 907000621,
+   "verified": false,
+   "default": false,
+   "n_units": 47,
+   "paper_session": true,
+   "paper_link": "inferred: listed among the 18 linear-track sessions of Maboudi et al. 2018 (Figure2.ipynb output), 'previously used by [Diba and Buzsáki, 2007]'",
+   "verification": "",
+   "members": [
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.res.1",
+     "sha256": "1ad64a2c6cf809eec64262c29a951d3dbae000c7c4ff33eb94f659d66b5157f8",
+     "size_bytes": 519164
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.clu.1",
+     "sha256": "3cfe2c5df7fad52f2e275f71cf25da671f9f376d5261e80fb0320141f58acc5b",
+     "size_bytes": 121676
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.res.2",
+     "sha256": "610508e5884c95c39471308c66b8b5c1b901a0b792903dc040d4502fcfb8f42e",
+     "size_bytes": 576783
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.clu.2",
+     "sha256": "f39888c92818482fc11b17408dccbd13594c69ae1cde6bce808df7f3f145aa51",
+     "size_bytes": 135094
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.res.3",
+     "sha256": "272ef2205571c4bb253bbd9cce04fa81b4986d77ff14dc25a122dfcc90387ee6",
+     "size_bytes": 402133
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.clu.3",
+     "sha256": "239a5d5164688f6755d4499c4e22f146b6fd06470bea747cbcad23779dff61c6",
+     "size_bytes": 93978
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.res.4",
+     "sha256": "444ad1fa37e776b834625e82beb37b92b19b4bc7e43e35ccffc867b2ad8625de",
+     "size_bytes": 645585
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.clu.4",
+     "sha256": "afc6e943c12e3e5143a58f18498426c98a260a0144371f041a883940fe54df7d",
+     "size_bytes": 150720
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.res.5",
+     "sha256": "f074c5cdd387fd71828ba94d431edd5abdf9eae765120e1dadf3e922337545dc",
+     "size_bytes": 355489
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.clu.5",
+     "sha256": "c2dca0bd5108ff64b5eed8c433aa31fa6d91ef0f6a00c0d2c79f2cb21707b885",
+     "size_bytes": 82728
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.res.6",
+     "sha256": "598abdbb2ead4a1f4d894de89ccb0de7b011b5f41d2de896b634ee2cc3db09be",
+     "size_bytes": 300612
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.clu.6",
+     "sha256": "c58330bd97b72c27b61d84697d5b902dfe624e6ba4527261fe0bcf02df542f7a",
+     "size_bytes": 70260
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.res.7",
+     "sha256": "fe110fbc405eeef0979fe3a01fa17ccabaac706e51e9f73598dbd591ed0dff54",
+     "size_bytes": 615580
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.clu.7",
+     "sha256": "2b4ee80263f7c71d82238ee1bd3cd1bfd23e7faaa3b85b1e7453188cc2ce8225",
+     "size_bytes": 143538
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.res.8",
+     "sha256": "5895a610b4ad4f654b5d8b81708e38a07ce7f54c63ee3a9233e33810dbc29fa5",
+     "size_bytes": 570553
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.clu.8",
+     "sha256": "be1a36e09464f4d9ab63fbb140a285508d69ae1b1836c6fd232549cfee538c8c",
+     "size_bytes": 165335
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.res.9",
+     "sha256": "37afcf23f4f99db7653555c36e6ad39b24e24a9378279a25ec3d686bd88e16d4",
+     "size_bytes": 1039005
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.clu.9",
+     "sha256": "43da6fb7019ac4ff96e22ff22dc279e1bb8265cbf698e07c751104f430bb46bc",
+     "size_bytes": 243906
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.res.10",
+     "sha256": "4cf88685434f182d677229b80f95aea010db867fe15110d1faf063e3785fecdc",
+     "size_bytes": 528604
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.clu.10",
+     "sha256": "a6eddb16b78f1ef82503e96bb9eb61447d0e11cebf8cd4d13e8b9b9e277428db",
+     "size_bytes": 123316
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.res.11",
+     "sha256": "6eac338ba8493c5ab4f17c53625b499e4e333c8ca4897e9136a76ee5adcc6379",
+     "size_bytes": 3122346
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.clu.11",
+     "sha256": "68bbb1e9c02557e01ce80edc394b6c7a62df6988652038975160e62d50634686",
+     "size_bytes": 726068
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.res.12",
+     "sha256": "0c93e414a138446d3d4e3e6efdf87f4d46ea6c1d4b28a5226ede4f4c9fc05d64",
+     "size_bytes": 1533192
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.clu.12",
+     "sha256": "be88065009e838eff5476b0724372c3a24b415e8b4990b170ac79d4141048fa7",
+     "size_bytes": 358301
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.xml",
+     "sha256": "2e809be5483de733a85e581415f4e3b739832491b15e24bb7cc1e1575c4b891e",
+     "size_bytes": 57243
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-6-12_16-53-46/2006-6-12_16-53-46.eeg",
+     "member": "gor01-6-12/2006-6-12_16-53-46/2006-6-12_16-53-46.eeg",
+     "sha256": "afe3e7d8eef889451bcc059f17db81dd2bec1b54e075f48b0e95722a41ada4d2",
+     "size_bytes": 197576064
+    }
+   ]
+  },
+  {
+   "session": "2006-6-12_19-26-43",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/gor01-6-12/2006-6-12_19-26-43.tar.gz",
+   "file_name": "2006-6-12_19-26-43.tar.gz",
+   "sha256": "3d55334599bbe4ae1d8989ff1f46e17272ae5a6b531be4d7b3351ef38fccbd9a",
+   "size_bytes": 2483580426,
+   "verified": false,
+   "default": false,
+   "n_units": 49,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.res.1",
+     "sha256": "73382d9cd0db8f8fb9035790ed8a0ef6c7ea19916b4cfd85fce6002670828b86",
+     "size_bytes": 2493445
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.clu.1",
+     "sha256": "2fef103aa89ed5cffa1d07e552fcef58db8cd194f9939fd1be81d199c2a91227",
+     "size_bytes": 564166
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.res.2",
+     "sha256": "22c9f4417cd3a6bccb124fdbe4b025d3b196ec0cfa2672ea0d883c2554ba695c",
+     "size_bytes": 2717549
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.clu.2",
+     "sha256": "8bc56fee6f9af8717c10ff665cccbe46dd3fc1ae87a0bb8d23aaec625d1d9220",
+     "size_bytes": 615100
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.res.3",
+     "sha256": "38ad35eef94c4f775f916ed7f357bfbdfa9d9f7908624482d6551340fff9ad39",
+     "size_bytes": 2023147
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.clu.3",
+     "sha256": "9dd7a400c7c602b8d3bb3964ce64e5ae7784c2940616a2066e1a454c3f9da580",
+     "size_bytes": 455592
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.res.4",
+     "sha256": "aa66ac074e27427728cdd0dc7c0c427d577ac40d2847bb2b472d42ea44552fa8",
+     "size_bytes": 1845851
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.clu.4",
+     "sha256": "c9cbfeedb84dd1ec38d498b361a10dd936acc4c41ffd64d2236915ed430b13df",
+     "size_bytes": 417286
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.res.5",
+     "sha256": "9d3e091987f94a0f97510d1aef9240f6a66b7105f34df727f80fec4f364ed3d3",
+     "size_bytes": 645453
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.clu.5",
+     "sha256": "aee144f3f46175f09e24ee4a0c5e2e6239d6a35543321f07b3e43594b92b91cd",
+     "size_bytes": 146050
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.res.6",
+     "sha256": "f9d0640454f1ea760244432919595937e81468f84059e2e651c8476f397255a0",
+     "size_bytes": 985403
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.clu.6",
+     "sha256": "d418654f4ebee635d86d57028e6a6c81a02c0df6b136f0a3a5101b5c19c11634",
+     "size_bytes": 221962
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.res.7",
+     "sha256": "1d924dbc33a97df96348193709f2278ebb06ffa01fbb03b482b514ea85bd4a25",
+     "size_bytes": 1795392
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.clu.7",
+     "sha256": "501d9265a0f96c791b66557255a1f265cb7efb092535a0ec6dd0ed2847ee2750",
+     "size_bytes": 406370
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.res.8",
+     "sha256": "8f9bdc04ece30a1343209aad6f917a6380692bcd3628c395b419c40a2bac2eda",
+     "size_bytes": 1561488
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.clu.8",
+     "sha256": "178ba40a7073e63f20605731811d25a2212e4916a1202f7e801284c283427174",
+     "size_bytes": 449718
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.res.9",
+     "sha256": "1584aacd00e7cbe530b7c31f7b1e06e61f23247e1db85eb41a26cfa9adc6ec3c",
+     "size_bytes": 2574902
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.clu.9",
+     "sha256": "e77aa1508eb4b7740a388613b9e700889a44fc2135d087072d5298021cda7bc9",
+     "size_bytes": 582630
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.res.10",
+     "sha256": "9002ffd47cc9c13998f36f6cfa344c38a95a1b2745d5732fad4bbfe6752c4585",
+     "size_bytes": 1691723
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.clu.10",
+     "sha256": "fd5039f081de32be49992b097e817312c939d91fc1671461181b22303bafc3a9",
+     "size_bytes": 381618
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.res.11",
+     "sha256": "d0f364b5b14e5174f10721ad358836b1c62587f52b205f07b9867bd713842fe2",
+     "size_bytes": 6671807
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.clu.11",
+     "sha256": "e267c9dce264f115ea7ce6b96ca38ea8015e52aa80589d6e205fc78cfefadbfc",
+     "size_bytes": 1519460
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.res.12",
+     "sha256": "5acbc494bde38bda289edda90ad71ded9dea2fdc6e6a4604fab5f7b27060b9b4",
+     "size_bytes": 3491673
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.clu.12",
+     "sha256": "61a88437ba9cc3d60f8cae8ebdc1b9c6fc8adaba73ee15d2a3d82695dd024def",
+     "size_bytes": 794632
+    },
+    {
+     "path": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.xml",
+     "sha256": "2e809be5483de733a85e581415f4e3b739832491b15e24bb7cc1e1575c4b891e",
+     "size_bytes": 57243
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-6-12_19-26-43/2006-6-12_19-26-43.eeg",
+     "member": "gor01-6-12/2006-6-12_19-26-43/2006-6-12_19-26-43.eeg",
+     "sha256": "5c8f950a54e5386dc749dc776748cf048cce4c58e3ceb3db2083e5021baa6625",
+     "size_bytes": 566896512
+    }
+   ]
+  },
+  {
+   "session": "2006-6-13_14-42-6",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/gor01-6-13/2006-6-13_14-42-6.tar.gz",
+   "file_name": "2006-6-13_14-42-6.tar.gz",
+   "sha256": "58bdbe57e9f765cfe073fd76c671ae030cb6d23b3b5bedf4a96cf0d08d319b21",
+   "size_bytes": 707350776,
+   "verified": false,
+   "default": false,
+   "n_units": 50,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.res.1",
+     "sha256": "119c532081d6d68498a58e0855ee687f977e604d648af88e06d1db7657021684",
+     "size_bytes": 866921
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.clu.1",
+     "sha256": "77cc36209000417cd5f333f73b9febb3f443217e738b2acbb60113f86438ab48",
+     "size_bytes": 201822
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.res.2",
+     "sha256": "77409f71c10df6734cd54442b10727d84e69060ee00a2e81cf0b8d05fcc76927",
+     "size_bytes": 586257
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.clu.2",
+     "sha256": "cb6341371018353f7a75d8225d702c317305dbd51fb43a27bed0a7fa23feb6b9",
+     "size_bytes": 164430
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.res.3",
+     "sha256": "2c7e3e06f47ffa1d95bcc2839742275e9f02dae94ea6da6ca7a94c3fe93b10d5",
+     "size_bytes": 689009
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.clu.3",
+     "sha256": "2b1ec2ea9af415aa87e0f365cb754465cd7702894fc84c10449e4f5412d26237",
+     "size_bytes": 160420
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.res.4",
+     "sha256": "f6fe166aff0b4729938cc94f1bb3f3beef84d22cd69407c8cf1b0842eb7c42a2",
+     "size_bytes": 643649
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.clu.4",
+     "sha256": "b3819b0c44d3f249017a4a938b7e611aab878da513b199c96690066db8906e34",
+     "size_bytes": 150118
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.res.5",
+     "sha256": "64c1787c2692393ea3573e5b30556e1e31cd5e3dc8de132e286f47e0ad894733",
+     "size_bytes": 480229
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.clu.5",
+     "sha256": "73ad6da0d7268690d43626d16ff28cebb973f89f124986c1b3eea713bdeb36c5",
+     "size_bytes": 111824
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.res.6",
+     "sha256": "274f4bbb2fc8dae30a9ddff9b712531b68b971df420207c649fe1f5eafd0f87c",
+     "size_bytes": 252188
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.clu.6",
+     "sha256": "63ee698e8c060b3cc47eb79abf18f61d84d729f96c0a9bcdbabf9d0480c5951b",
+     "size_bytes": 58782
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.res.7",
+     "sha256": "3ca0ddf1eb3d7a47f678012a07503ad0c7baaede5f47bd95c10c52767998c916",
+     "size_bytes": 237603
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.clu.7",
+     "sha256": "7f06ef6aad4008557280cb4a997e8a08ec3e161d8343faf33238fe3bad7b817b",
+     "size_bytes": 55336
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.res.8",
+     "sha256": "24db994c28fb76bf866f7f79e819a46a46ebd1bf34144b0f49659c175e54b898",
+     "size_bytes": 602948
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.clu.8",
+     "sha256": "6273486ce1fe05ace3d733bff10373f52d60c6bfd6746f32ad32b7eb3b96dd3f",
+     "size_bytes": 178421
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.res.9",
+     "sha256": "4673f9ccacc11a8186029e6c8c33016520bb0ee2c01419210bd4553266f6eea3",
+     "size_bytes": 704655
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.clu.9",
+     "sha256": "68433f1ca55ecfbf06bd77004a07b620d28fb9bc63d3e97e4bc23cff0ea94a29",
+     "size_bytes": 164664
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.res.10",
+     "sha256": "ab13825dda49269aa04a5ce319489a3726ae89ef16e95f60045e5e9b54cb9ce1",
+     "size_bytes": 632020
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.clu.10",
+     "sha256": "725b1aa9e3d12c5dfc87d9e5a57a1af2af6548a92e21a69647c5e11e84b9f942",
+     "size_bytes": 146840
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.res.11",
+     "sha256": "60aea23463223699d8c1fe15763d9ff5cee7c21102298c7525f463ae85434d78",
+     "size_bytes": 559727
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.clu.11",
+     "sha256": "f5a7e02cae11ec4070439dfd975d6703f093a3c5fefe1b46fa2d4c98f677fa55",
+     "size_bytes": 129950
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.res.12",
+     "sha256": "3fa792a6e1285d070832e18ffbbfd7251861a561b8d84f429059cf3ec78ce4dd",
+     "size_bytes": 841669
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.clu.12",
+     "sha256": "49b8a8622a43f382749825a3e7ed5d23f892138c8ba4a64a9c48222056ee7669",
+     "size_bytes": 197026
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.xml",
+     "sha256": "7d8b41f25ab05bf9acfecbd34ddfc80d13ffa5da6049da1ab7a09bd91c83d28f",
+     "size_bytes": 57241
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-6-13_14-42-6/2006-6-13_14-42-6.eeg",
+     "member": "gor01-6-13/2006-6-13_14-42-6/2006-6-13_14-42-6.eeg",
+     "sha256": "215079ee1f289979280cb5722983ac89daa23cf783d24334f090a0fdf93a4733",
+     "size_bytes": 211126848
+    }
+   ]
+  },
+  {
+   "session": "2006-6-13_15-22-3",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/gor01-6-13/2006-6-13_15-22-3.tar.gz",
+   "file_name": "2006-6-13_15-22-3.tar.gz",
+   "sha256": "760ee053e63c3d3ef84cd54ecae00a90f266326c4f38b14e75c1927da548bc77",
+   "size_bytes": 647801170,
+   "verified": false,
+   "default": false,
+   "n_units": 51,
+   "paper_session": true,
+   "paper_link": "inferred: listed among the 18 linear-track sessions of Maboudi et al. 2018 (Figure2.ipynb output), 'previously used by [Diba and Buzsáki, 2007]'",
+   "verification": "",
+   "members": [
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.res.1",
+     "sha256": "283bfe17b2bed98f2129194aabf1513da80714b556bb6fa635be4fa7e85eee85",
+     "size_bytes": 778845
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.clu.1",
+     "sha256": "456b3698697c8ee2973acf727654f432be17b121d1781f4663aa616afdf6cf45",
+     "size_bytes": 180516
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.res.2",
+     "sha256": "b94600529cd03e82b98b504de55377ce507f245c4212c07aa0ccb6d04f6de491",
+     "size_bytes": 452322
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.clu.2",
+     "sha256": "0d0455cd2bb82e8eb405f5faa29fe34d1d43d8fee958a477cf15779fd6533753",
+     "size_bytes": 132700
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.res.3",
+     "sha256": "8f22e199925729b776feb8e26b392a8124f3503421e6035b7f375e963077c221",
+     "size_bytes": 635571
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.clu.3",
+     "sha256": "a487539fde1d77a2fd4b54589ab0b64b0aa180d07b61ed91dee9a03c5c9563b1",
+     "size_bytes": 147732
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.res.4",
+     "sha256": "c897a8014979df24edede075ef5875b460809857b896093b869f1e95ea6a7fef",
+     "size_bytes": 675170
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.clu.4",
+     "sha256": "2247070dabdd9c53b28e28b5f408ad3f62973376c991cb8159fb3ea023ffdc1f",
+     "size_bytes": 156402
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.res.5",
+     "sha256": "3b961fadea7ec1ae22ada16d9b119db3421a6ca8fca7f42ebb6e51db30e4aae1",
+     "size_bytes": 697759
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.clu.5",
+     "sha256": "8f5d36b6a047d64d4dfcbc1e7b49a1617e2f4be6fb5ed1033c60f4e5b1f3eaa6",
+     "size_bytes": 161216
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.res.6",
+     "sha256": "7b7ac4d55892c72da8e501fdc470631a19ca343cd670c0b4b4dd538d3bc4f3ef",
+     "size_bytes": 295061
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.clu.6",
+     "sha256": "45158513fc0e1094cd5ec5a88ca2c74366658ecfce51873bcb749af8f650c81b",
+     "size_bytes": 68752
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.res.7",
+     "sha256": "71464c97dfd3a27530d077ca06027883349f11a275cfd4ad5483f6932b99fd8a",
+     "size_bytes": 289347
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.clu.7",
+     "sha256": "9c0115ed8868f0b2d52b09c975ac0f2fe45f270eac8df771f99501a22f2f6012",
+     "size_bytes": 67268
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.res.8",
+     "sha256": "91422c737f38476449c8fae709cb16e16d8e883d9b73d43a9f9c534eac369035",
+     "size_bytes": 642275
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.clu.8",
+     "sha256": "e27e8cd4c403eff78a0ef311a889a5e28d31d63f33c13d9461f98eb755355f99",
+     "size_bytes": 188696
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.res.9",
+     "sha256": "732cf173f5bf3ef99f46e8216ad07116aeb72271ca4d2a875b2635880abe7c85",
+     "size_bytes": 449127
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.clu.9",
+     "sha256": "2839d45051d71522e45686c4053f72319f182cfb8817a551d0b52ece7defc64f",
+     "size_bytes": 104452
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.res.10",
+     "sha256": "9ec8a48220f74db5cc2fbe8e34cbf0946317538e50eca1326c6ad837ac0266e8",
+     "size_bytes": 516019
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.clu.10",
+     "sha256": "db71e15b77b12395e25d713e435680aa3ea87e740cd0a5f60142f183973c31cc",
+     "size_bytes": 119314
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.res.11",
+     "sha256": "b1e1b1d3baa33a4a154bd3e2386458388c105e195770187369ae12603becf998",
+     "size_bytes": 243203
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.clu.11",
+     "sha256": "aee51120b5810d3516914dbed5a1b545d927d6a51cb04baa8860df63d293473d",
+     "size_bytes": 56130
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.res.12",
+     "sha256": "ef25ac90977d516b22ab795b36cb863f970efadbaebb6cf43ba0a849d7d8d0c0",
+     "size_bytes": 650372
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.clu.12",
+     "sha256": "c9e3d116535d293e0c43f7f7d5225e166f02ffb2ac6d3fc38746722948475971",
+     "size_bytes": 151284
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.xml",
+     "sha256": "7d8b41f25ab05bf9acfecbd34ddfc80d13ffa5da6049da1ab7a09bd91c83d28f",
+     "size_bytes": 57241
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-6-13_15-22-3/2006-6-13_15-22-3.eeg",
+     "member": "gor01-6-13/2006-6-13_15-22-3/2006-6-13_15-22-3.eeg",
+     "sha256": "e233da40b1cf0c79bf31190b5d820b512c107787d96f726e85ca8c7667c1a4ee",
+     "size_bytes": 212760192
+    }
+   ]
+  },
+  {
+   "session": "2006-6-13_15-44-7",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/gor01-6-13/2006-6-13_15-44-7.tar.gz",
+   "file_name": "2006-6-13_15-44-7.tar.gz",
+   "sha256": "dc9e8d27052e83dae2e8383c8725a846da357c08a23b3eb3230495b1e889c1fb",
+   "size_bytes": 1816590054,
+   "verified": false,
+   "default": false,
+   "n_units": 51,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.res.1",
+     "sha256": "c7aede800c089c2bf7027e67ca1fa95e4f3a943176956734410126b9e3c8019b",
+     "size_bytes": 2038116
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.clu.1",
+     "sha256": "1597347f9648fa59235e30b78b8eec3a19f863f70c2957de0aded94e50de6979",
+     "size_bytes": 460204
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.res.2",
+     "sha256": "1f5f0bf6b18ef2906de878b4157f41fce08dcbf614f437a5c209939b5f3148fa",
+     "size_bytes": 1812387
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.clu.2",
+     "sha256": "df44cc879c8c17934ce01688eccca5143f8eeb4d86d9a1026f7b273d49d4a3c7",
+     "size_bytes": 464057
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.res.3",
+     "sha256": "62d6b0d7896ba5907a448066f8e11cfae9666ed2a6fe65be52dbd649000c3d0e",
+     "size_bytes": 1627733
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.clu.3",
+     "sha256": "9e6c6334ee959a4017cfb21e15d94b8dc985632e2900dc0dc9ab02a51f802ddf",
+     "size_bytes": 366512
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.res.4",
+     "sha256": "8216b64cd5e00b67df37343a4c2a4499fe54b565d2c449246c9a740d290822c4",
+     "size_bytes": 1837216
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.clu.4",
+     "sha256": "5e80206267beb58e7b51a1cbd4396a9ed6ccc00fbca8864eca4126ea2ca6ea58",
+     "size_bytes": 414186
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.res.5",
+     "sha256": "ebde8b7ec2ebac3208065f8a70cbeab620096ac0df85db0ae92bb5a5f9eb730e",
+     "size_bytes": 1607560
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.clu.5",
+     "sha256": "923cef7fdc586cc10ac6b8458f0487dd4469f0857def001c2615712769c5f4f2",
+     "size_bytes": 362200
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.res.6",
+     "sha256": "fabfd8dc6d713d348cb8f254a4dca75d94396832059070bcebdc23eafed970f1",
+     "size_bytes": 911556
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.clu.6",
+     "sha256": "5f1a079c7cefe67e0693e57ffd333602c5b3a29c654096ca93c14fb2d2b19ace",
+     "size_bytes": 205260
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.res.7",
+     "sha256": "85b0df8a9e655893f78915921ad3414aa6664b537e5f9f6a1f1534e293fd427c",
+     "size_bytes": 957151
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.clu.7",
+     "sha256": "326e2091603513bf036176d464b6dba3135a6f4b3f78ee13aca30af675854b03",
+     "size_bytes": 215530
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.res.8",
+     "sha256": "bdad95d48ef156793c5d9aae41df757a2e7bcb802224063ecd5272118fee9755",
+     "size_bytes": 1481419
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.clu.8",
+     "sha256": "6692aa095d652c693b20060054f32655db098e2f1b469bbdc733fba5750f9f84",
+     "size_bytes": 435667
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.res.9",
+     "sha256": "e0cfa8851871b78495c153ebef7c76125e05586dd3fbca40bed60284866f7a72",
+     "size_bytes": 1343793
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.clu.9",
+     "sha256": "2deb30b63cb1d4fd708ccf61edeebbfe7794fd69f7b3cbc1352c3ab8797e5a1c",
+     "size_bytes": 303094
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.res.10",
+     "sha256": "58f43e7ea0ec4c78012a69c3a7cab71cd00245e43f72efc8b06ea6d3f8d77d26",
+     "size_bytes": 1357818
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.clu.10",
+     "sha256": "0bbb3b2e4dc26e05db0760fc0a1e0401f7e2a7b5b70c799d1d216c7ca248a1ee",
+     "size_bytes": 306580
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.res.11",
+     "sha256": "bed7e5bc97e7c27895c44b0b433d33e74dd39d69f0d92b8ec1d7ae5c2e6b6fd0",
+     "size_bytes": 1360521
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.clu.11",
+     "sha256": "655482dae2a6a0e68bb5778a6431a8b23083856aa6aa5e57cd21572d32c31d09",
+     "size_bytes": 305290
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.res.12",
+     "sha256": "9ace6258d3c9b4ec457286284398ca025ca181f4b62f879097102faa274a4a68",
+     "size_bytes": 1680859
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.clu.12",
+     "sha256": "ff5c22ee8c99a92063cc16d9306469df7e9c673f166f67d4cc341f6db223d58a",
+     "size_bytes": 379610
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.xml",
+     "sha256": "7d8b41f25ab05bf9acfecbd34ddfc80d13ffa5da6049da1ab7a09bd91c83d28f",
+     "size_bytes": 57241
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-6-13_15-44-7/2006-6-13_15-44-7.eeg",
+     "member": "gor01-6-13/2006-6-13_15-44-7/2006-6-13_15-44-7.eeg",
+     "sha256": "da5ca7dbf74a5368853ff64429d10ed4c727b35eb279c047dc2814b6af7a48ce",
+     "size_bytes": 620434368
+    }
+   ]
+  },
+  {
+   "session": "2006-6-13_19-11-30",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/gor01-6-13/2006-6-13_19-11-30.tar.gz",
+   "file_name": "2006-6-13_19-11-30.tar.gz",
+   "sha256": "229d3eb943bf40746a29d6218690a2774886fc8223414056634d24320cb61cd9",
+   "size_bytes": 1999481273,
+   "verified": false,
+   "default": false,
+   "n_units": 47,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.res.1",
+     "sha256": "626e2bfe856aae6cf16241a5786ebed01c02f8bf0204b279eaed016a0e18ce42",
+     "size_bytes": 2319096
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.clu.1",
+     "sha256": "b47768c0f18f30f64e269e85de9f25688536134710a484e166593fa53bd62415",
+     "size_bytes": 522696
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.res.2",
+     "sha256": "d6ac03f04a59565bff3e983c41eaedc1f1203b5b5e000913a82ae3cf23acf2f3",
+     "size_bytes": 2300029
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.clu.2",
+     "sha256": "2251b449a9bd7d33117a8a17fd9b811da4fa92158637675845d23a15bd265cd6",
+     "size_bytes": 608678
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.res.3",
+     "sha256": "c52ec2c042a53d96f16c0905c13026896d4e792ec446cb7c30fa11d44fbf74be",
+     "size_bytes": 2608845
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.clu.3",
+     "sha256": "882c24c70ad3727d49a8d9d50d8012ef08b794538a79b3c5cf5a7536ef69d35d",
+     "size_bytes": 588564
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.res.4",
+     "sha256": "4ae4ded82e32f2da58cd0ead5cb0853039379bfb16e2c78237e198f83461b476",
+     "size_bytes": 2158528
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.clu.4",
+     "sha256": "1f325b3a44aa7c20c7b0b774e47728ecc2f3d48d084c40eebd5c6babab580ee7",
+     "size_bytes": 485686
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.res.5",
+     "sha256": "be55a27c368010bb5acc03784729014189acb48a0a19f6c70ddfbe5e2dd8c639",
+     "size_bytes": 1259964
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.clu.5",
+     "sha256": "97ec7767c1d590461d7c20427b010f2cd7347edd7a18a5bec49119afc6f831fd",
+     "size_bytes": 286460
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.res.6",
+     "sha256": "cb3127dbf5ecde1c6bc6fce9136d61f585826b5b66b016dc666eae4872c9bdbf",
+     "size_bytes": 852336
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.clu.6",
+     "sha256": "09abfa68dcd06c833d34142d0042c2da48e9a039d1dc556001d630c591c73b09",
+     "size_bytes": 191950
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.res.7",
+     "sha256": "1c06ca1ac131e053c81ce4bd744a770839233b8e75a0b342f482f46bb32ce079",
+     "size_bytes": 917578
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.clu.7",
+     "sha256": "25986abc1fe7ed35c469d8b4a8f2cdcffce25db6e25c7a31a93f95e7517f4b92",
+     "size_bytes": 206724
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.res.8",
+     "sha256": "f13d73a37728e1127a55d481a798da474e22f654810976d8a4cbef641c112996",
+     "size_bytes": 2222837
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.clu.8",
+     "sha256": "b9969c0ccb2ce7bbe04a8a897d49cb9a34ee397639a9798b5d80f442f0758c25",
+     "size_bytes": 636215
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.res.9",
+     "sha256": "757b81d162cb31e84c5e3fa003e50d5dc7c92fb163088039aa120f3ee1f2ca1f",
+     "size_bytes": 1617568
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.clu.9",
+     "sha256": "ffb6dc9e0574ecbe003d3a3283582493db54269d4178952d62fe99b5e6676327",
+     "size_bytes": 365314
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.res.10",
+     "sha256": "675bf161a036968f0f819f61a39f61bf8e9e167ec189bb8a0a3c8ffa0deb4ab8",
+     "size_bytes": 962980
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.clu.10",
+     "sha256": "22d3a28981533afdbe02b7237361abc4880c43aad7ebd0c85db7b3357ddd777f",
+     "size_bytes": 217452
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.res.11",
+     "sha256": "e903a9d51eeb0d5da0f3b2345481471c184c3b6f2dddc2017e0f1753d4b55a45",
+     "size_bytes": 695336
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.clu.11",
+     "sha256": "002a8497b127bfce4b8b9a2ba3f9a11a56e6a9bcec6a524e4282419f5f9fb895",
+     "size_bytes": 158242
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.res.12",
+     "sha256": "c656fac8cda2dd2f15a7371b4821172e81fffa30eabca2008f237f42516d007a",
+     "size_bytes": 1894991
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.clu.12",
+     "sha256": "1cccf05d2d0d028671f5f43c11d59c18c3d55d15f1d6fae94608ed5cfbc168d9",
+     "size_bytes": 428694
+    },
+    {
+     "path": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.xml",
+     "sha256": "7d8b41f25ab05bf9acfecbd34ddfc80d13ffa5da6049da1ab7a09bd91c83d28f",
+     "size_bytes": 57241
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-6-13_19-11-30/2006-6-13_19-11-30.eeg",
+     "member": "gor01-6-13/2006-6-13_19-11-30/2006-6-13_19-11-30.eeg",
+     "sha256": "1e897d2b3bc4a10c37ad321920bd1ebd05e38a968a791945e67e57680085f5f8",
+     "size_bytes": 690245376
+    }
+   ]
+  },
+  {
+   "session": "2006-6-7_11-26-53",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/gor01-6-7/2006-6-7_11-26-53.tar.gz",
+   "file_name": "2006-6-7_11-26-53.tar.gz",
+   "sha256": "99f6ab28b0ccff87c73ae9e13bdf235f37e87c205a3821d823830458da42ff04",
+   "size_bytes": 2256475674,
+   "verified": false,
+   "default": false,
+   "n_units": 86,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.res.1",
+     "sha256": "a02d35cf90f475ea0629c65ab81827822cac4532a828f71d3a2aa3af2ab74b1a",
+     "size_bytes": 3350488
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.clu.1",
+     "sha256": "440ee9d5980f4972c8e6a6552c61056b609367b1b2b6f65b6cad49f8e42406a6",
+     "size_bytes": 755080
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.res.2",
+     "sha256": "2e433f344463d3ee74a9d7e74c19510bf673731479d1c39c59350d020112da1c",
+     "size_bytes": 1826667
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.clu.2",
+     "sha256": "da382c0bc9baab793043a4348741f815316bdb2ec73b3f688507bfe9e36871ab",
+     "size_bytes": 543920
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.res.3",
+     "sha256": "a19e3ce0624c523ff0bcd211525a9a8f65334a5a3d8f1bca1c6058a7e10b1d31",
+     "size_bytes": 1559861
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.clu.3",
+     "sha256": "b6e394890b2d9352f26ccd3523051c8ec747ff4599911a17fee3cf069e7e2b54",
+     "size_bytes": 361963
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.res.4",
+     "sha256": "e66a2e4755672d1d0f1b5a6a14086c5fce05fcb24a5e7e0c32e2bb4078d039c6",
+     "size_bytes": 3136191
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.clu.4",
+     "sha256": "3bbbeba1c48eb93748f443bc8b12f51075fca3f83efa5091bf7eeff3cadad398",
+     "size_bytes": 707120
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.res.5",
+     "sha256": "831e0333c87192a256522cb98bee14c58c229a0173846dda4558dac49c9a597c",
+     "size_bytes": 709965
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.clu.5",
+     "sha256": "8644406621f57dc75ae359aadc864b6c35547452c327ab05d0dfadfeea957cbd",
+     "size_bytes": 159872
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.res.6",
+     "sha256": "32cabbfaee9eb12558898a91edbe6fe4878d154a353a4a156b87c88a0b892404",
+     "size_bytes": 1244770
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.clu.6",
+     "sha256": "b407aca8a2d76262cee4e15a80822af0c61c957374b910a8f12e895d748d2b2f",
+     "size_bytes": 279484
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.res.7",
+     "sha256": "587396d3f7676d78c5a79ff80537b164e1c14e7efd493d3fde7ae9ba5108e7cf",
+     "size_bytes": 2475002
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.clu.7",
+     "sha256": "439255f62126742557a8d8b25c7b16320426986cbef85c5d064cb178cd00efa8",
+     "size_bytes": 728057
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.res.8",
+     "sha256": "2aae0372922cd41ed98140e1480bdc989ef2ed911dc7dfc86d4cd0e22a157080",
+     "size_bytes": 1514919
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.clu.8",
+     "sha256": "e6947a46ee7b44d040586cbb9ba3bf0c9df5f6242e06f66c9d46846b906172f9",
+     "size_bytes": 442429
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.res.9",
+     "sha256": "f343ffd9cd3be355b44580ddc577a98d3b10f904016ab4bcc0b155d134e4eeaa",
+     "size_bytes": 2840633
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.clu.9",
+     "sha256": "2de933fdf0b1efa4e6fc3ed8d6c043b070e3186728106975558fbf086e8dd36a",
+     "size_bytes": 639828
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.res.10",
+     "sha256": "b9a76b8cde4d6ec9b4a642318c128ae698bbbb0c33eeb2cdc26c354b9a9aa009",
+     "size_bytes": 2380082
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.clu.10",
+     "sha256": "7b19b1c0d8fa369af72d9733f790c2c43bbd757fee7da5bf8619d131d80ee220",
+     "size_bytes": 535010
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.res.11",
+     "sha256": "034f18cfa2cd1a366cddc3ebcfe6c82c73ff583977f1220571d922999f76d9e3",
+     "size_bytes": 1714365
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.clu.11",
+     "sha256": "903b47014779d8c2798e0ca018c7d86fecaa72edcd865710589d9df7813ad085",
+     "size_bytes": 386508
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.res.12",
+     "sha256": "157a7561eb9a3dd88c3af3c3f0dced12ae23987003a862c5b36df8abac5cc5b2",
+     "size_bytes": 1260862
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.clu.12",
+     "sha256": "577df6c1b6036bd5785f8948d4bddc185e0895b73697de9123b3238a394deda4",
+     "size_bytes": 283640
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.xml",
+     "sha256": "7aefe6422f8a5712d2b57c10b87502fcafa5bdcf0d75ebf110b8c15558fc2e52",
+     "size_bytes": 64410
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-6-7_11-26-53/2006-6-7_11-26-53.eeg",
+     "member": "gor01-6-7/2006-6-7_11-26-53/2006-6-7_11-26-53.eeg",
+     "sha256": "15429750df41d676390dcf2214cbaa492b5578591cd849b902a0353491bc3f87",
+     "size_bytes": 647173056
+    }
+   ]
+  },
+  {
+   "session": "2006-6-7_16-40-19",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/gor01-6-7/2006-6-7_16-40-19.tar.gz",
+   "file_name": "2006-6-7_16-40-19.tar.gz",
+   "sha256": "6a45507608c59b4828735bebcffff83b0e06752ce6aae0ba112ff9f881bd3ce2",
+   "size_bytes": 2167705943,
+   "verified": true,
+   "default": true,
+   "n_units": 87,
+   "paper_session": true,
+   "paper_link": "inferred: listed among the 18 linear-track sessions of Maboudi et al. 2018 (Figure2.ipynb output), 'previously used by [Diba and Buzsáki, 2007]'",
+   "verification": "read 2026-11-11: 87 clusters from 2 up on 12 shanks, every one in hc-3's cell table for gor01-6-7 (3 listed units have no spike here); the last spike at 2587.80 s against hc-3's 2587.808 s session length; fig1.nel's 258,427 spike times fall within 1 us of an hc-3 detected spike for 95.3% (none shifted 0.1 s, 3.0% shifted 1 s); its pos2d support is 2 intervals, 0-1180 s and 1250-2580 s, as nelpy's hc-3 table gives them",
+   "members": [
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.1",
+     "sha256": "9b4a84bdef7ff794629d5f3563923682c54d98f1b5c4fd252e4a7d86563081cb",
+     "size_bytes": 2385357
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.clu.1",
+     "sha256": "80b68e3e0769d81ef6cfa4c1a5db5ab770ef87b4e376c7dc5f075d7a60b5d20e",
+     "size_bytes": 538756
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.2",
+     "sha256": "84b14b552a9f9f4b4ce115ca5cbf30fcfc4738ae39d960a7549732264718d9d6",
+     "size_bytes": 1963362
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.clu.2",
+     "sha256": "2b3240d8eb46eaac4aade422d351dfa33f821f3dbe3c982744eb8d27ab9ceb62",
+     "size_bytes": 571668
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.3",
+     "sha256": "2fe4aed00b5d5d60eee53da92baab171bf1e76f12e293e2c73d1e737cb591329",
+     "size_bytes": 1716257
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.clu.3",
+     "sha256": "95762f23b166e4e360949551f7f8cb27cadd77e6a63e1caac1525f68782031ed",
+     "size_bytes": 419552
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.4",
+     "sha256": "96191535ebcc32cc303468b93879766324b51760b836909fdb631cba0ca5410f",
+     "size_bytes": 2106930
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.clu.4",
+     "sha256": "a46baacd69939e3863cc470a97681ae541fe1e73ede682c12c5b608a3d25e4e6",
+     "size_bytes": 475656
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.5",
+     "sha256": "3728d2059b5f596c7603defaab33864736ac4e09308ce87b5a697951b36f65e9",
+     "size_bytes": 653608
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.clu.5",
+     "sha256": "076aba1b590111c1143962ce57a66587bdd11473474b9ee9c9e9616d18c276cf",
+     "size_bytes": 150006
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.6",
+     "sha256": "dbc3132c80b59ce589178eb6a0e0340e60f8ba4009fd2669a0db448e9c1d0483",
+     "size_bytes": 1535982
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.clu.6",
+     "sha256": "8e14aa84fa585b7b983ed1a4e22599c9dcdc6c5115333b40b261bf0d964fe686",
+     "size_bytes": 345348
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.7",
+     "sha256": "7d59d3d18e27da96f66ac091383bfbdca02ca78565e3a599dcb3f02d116f6a26",
+     "size_bytes": 2508770
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.clu.7",
+     "sha256": "e7b4b1d5ae2507d4c967921b9ca0d655517582ee7fcbdaa9eb13cdb88c5397a2",
+     "size_bytes": 733595
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.8",
+     "sha256": "e6ff3e354c52e279ca155627c41fbdecc43516d49cf010f1957d0888bc75611b",
+     "size_bytes": 1219727
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.clu.8",
+     "sha256": "4a7d1b7182c0815fdcf47579a54eda591570eda85fd7fab2d6fce429fc270533",
+     "size_bytes": 363759
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.9",
+     "sha256": "41d587dcaf193437897cd96efa2739529de80af5c179c80c21b646f9a1c19dd0",
+     "size_bytes": 2562737
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.clu.9",
+     "sha256": "23cad6390786ed232291b191f87078d8e875f3c7c763fcd90886cf47d6329ce1",
+     "size_bytes": 579550
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.10",
+     "sha256": "ca084030b4da6388aeff0479ae2614010fd2819c5b621e301405cf067dbd039f",
+     "size_bytes": 2204920
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.clu.10",
+     "sha256": "31b40cde30f99a8c473f2d2de0b93176b267ed3f5eefa013d85f1ff14923f577",
+     "size_bytes": 497888
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.11",
+     "sha256": "68ac76ce792a2eef8b1fb9a490844dd1634d53428250a9c1b48674dc7c2a2c28",
+     "size_bytes": 1686165
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.clu.11",
+     "sha256": "4fdd1cd38d00705a4b555e0b6b7157d43b46bacc5753af427e06a3981abd57d9",
+     "size_bytes": 381348
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.res.12",
+     "sha256": "97a9463ff9197ee247911ac370a0c82aba56b6c3ad3219728364851de91b4faf",
+     "size_bytes": 2454355
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.clu.12",
+     "sha256": "6ab45ff81777d4104c560448710664d9141cfffd80ce10673277cf60ba5d5a7f",
+     "size_bytes": 555880
+    },
+    {
+     "path": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.xml",
+     "sha256": "7aefe6422f8a5712d2b57c10b87502fcafa5bdcf0d75ebf110b8c15558fc2e52",
+     "size_bytes": 64410
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    },
+    {
+     "path": "fig1.nel",
+     "url": "https://raw.githubusercontent.com/elifesciences-publications/UncoveringTemporalStructureHippocampus/f1b021dd804347151b1bc10797c4ab09582860a9/data/fig1.nel",
+     "sha256": "00d2f965458abbd2eb61abc64d615a41dd7579b521e2c6c3882be41b6943884f",
+     "size_bytes": 16275281
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-6-7_16-40-19/2006-6-7_16-40-19.eeg",
+     "member": "gor01-6-7/2006-6-7_16-40-19/2006-6-7_16-40-19.eeg",
+     "sha256": "84961980be6982436acc42cedcfe3fdba0ffdfe28bfc03918a69ce6a30159c9c",
+     "size_bytes": 622067712
+    }
+   ],
+   "stated": {
+    "sampling_rate": {
+     "value": 60.0,
+     "basis": "inferred",
+     "source": "Maboudi et al. 2018's fig1.nel: pos2d's _fs is 60.00000000005457 and its samples are 1/60 s apart; nelpy's hc-3 reader reads Diba's .whl files at fs=60. No source read states the camera rate"
+    },
+    "position_span": {
+     "value": [
+      120.0,
+      300.0
+     ],
+     "basis": "inferred",
+     "source": "Diba & Buzsáki 2007's Supplementary Methods: tracks of 79, 125 and 170 cm with 21 x 21 cm end platforms (121 to 212 cm in all); Maboudi et al. 2018: tracks 150 or 200 cm long (192 to 242 cm). The head reaches past the platforms' edges, so the largest span of the tracked positions must lie within 120 to 300 cm"
+    },
+    "speed_limit": {
+     "value": 393.0,
+     "basis": "stated",
+     "source": "Iriarte-Díaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Rattus runs at most 13.78 body lengths/s at a 0.190 m body length, 2.62 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is a head-mounted LED, which swings faster than the body, and no source read states head speed"
+    }
+   }
+  },
+  {
+   "session": "11-04_22-31-40",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/pin01-11-04/11-04_22-31-40.tar.gz",
+   "file_name": "11-04_22-31-40.tar.gz",
+   "sha256": "598b4e0a9317c277ac1897b7903589a5f0266471c2f3fe966b7062a80431d302",
+   "size_bytes": 1340526279,
+   "verified": false,
+   "default": false,
+   "n_units": 66,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.res.1",
+     "sha256": "af09be94d5b900d3fca12a4891f1c0d7e94af404422c0e5adbc926a097a64880",
+     "size_bytes": 2379693
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.clu.1",
+     "sha256": "87350b69c6850bcc62fde9b86577ee20a7d6cee96b82547d8022169dd17d2a42",
+     "size_bytes": 539352
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.res.2",
+     "sha256": "d9ae3e6d5e0c9d3512b934a2fbbff248740a7fae2caf90f96eda362608ea2e25",
+     "size_bytes": 2611356
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.clu.2",
+     "sha256": "964beb596199b553f0cd060208de32c551ba1ba41e152cd7a9b8e2349db4d691",
+     "size_bytes": 591896
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.res.3",
+     "sha256": "1e07bd3e5fcab124d872882b2bdce4b83e3053e08437ca970cc9eb6da1fbb521",
+     "size_bytes": 1858754
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.clu.3",
+     "sha256": "ecf0889ab6fcbd61b7ccd0c2aa647b1c8345988b0186d51729b087cee77de45c",
+     "size_bytes": 426191
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.res.4",
+     "sha256": "99adbee4afa87b4dfb343ee896cd559f5b1f4850e532ddec447c8f7ff0a3fa43",
+     "size_bytes": 3063481
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.clu.4",
+     "sha256": "41cc9fca7ad3f0f04256dee315b6a9f20c3e6e493cbc3e9a57296a11b5b9c4f4",
+     "size_bytes": 799286
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.res.5",
+     "sha256": "7c2fe5cd48b17822a9c0d5511b106c911be8f4a5411235e0ce2c3544dc7ef8c3",
+     "size_bytes": 1615965
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.clu.5",
+     "sha256": "184102e9f5d37c2e94381f1db533b1754a2c009ac9c270b3800a59034cd5d0d5",
+     "size_bytes": 364636
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.res.6",
+     "sha256": "e3912a28c96d6d43faebccebb1048725325d87a61fa9eb422547b61e2fddfa4d",
+     "size_bytes": 1962447
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.clu.6",
+     "sha256": "d1ea16f3b0f7aaa2a764abe5463a21084cfd62f69e18cd4deaba2586682a35d1",
+     "size_bytes": 503260
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.res.7",
+     "sha256": "0d21540af16838acbabc95fc94a4efa4f71f7f47fc290307665c7509c757d936",
+     "size_bytes": 2084525
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.clu.7",
+     "sha256": "2c0c175e1f7ecc2a00c98acc74b2795dfc37e18083120388c01e75065616f61f",
+     "size_bytes": 532535
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.res.8",
+     "sha256": "6b938d6b9e23684430c9e23f11fd75b366eaef1edd2bcaf8caa262a6654a16e4",
+     "size_bytes": 1901910
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.clu.8",
+     "sha256": "2cb23525760b3266602ea22e6da7121179bc0edaa33797ea0c6544494f4f41fb",
+     "size_bytes": 433963
+    },
+    {
+     "path": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.xml",
+     "sha256": "e7115d54114c4f361cf5101fa8296c4682734c1933b12cedf2d269975b696cb7",
+     "size_bytes": 46197
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "11-04_22-31-40/11-04_22-31-40.eeg",
+     "member": "pin01-11-04/11-04_22-31-40/11-04_22-31-40.eeg",
+     "sha256": "433f36c35ae3ef8775d42fed577f8b5c97a22c78f7497354e6d4365ba65f18ee",
+     "size_bytes": 290334592
+    }
+   ]
+  },
+  {
+   "session": "11-05_0-06-51",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/pin01-11-04/11-05_0-06-51.tar.gz",
+   "file_name": "11-05_0-06-51.tar.gz",
+   "sha256": "6f6ffb99f4bb080aac8ff2f2112d831f110f4a24a56887aea6315dc353af9f9b",
+   "size_bytes": 291890839,
+   "verified": false,
+   "default": false,
+   "n_units": 65,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.res.1",
+     "sha256": "f2d55cf5db16e193ba8a090cefe62a83280052ca216a1adcfef26d18d7dd669c",
+     "size_bytes": 370606
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.clu.1",
+     "sha256": "ddbb3a94e9f1c800ef5005fff6a3d58cc6ab4b116a68be3a110ac39d5e50f96c",
+     "size_bytes": 87670
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.res.2",
+     "sha256": "0db1fc4cb981b2704aad7329e910b0fac6315ce93e672327a52f788fcc37e5b5",
+     "size_bytes": 429940
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.clu.2",
+     "sha256": "b20e71403b3485ba96fc4137677602103a1ccbcb2f7f24f224cf5ee2fa4828c9",
+     "size_bytes": 101626
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.res.3",
+     "sha256": "f499dce63d7fba0ad7be4ed4400a3edbbb6c6550c75ba18ef87c8145c63d2102",
+     "size_bytes": 360590
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.clu.3",
+     "sha256": "93e802bb2da931ef7273ef927db833047e331cc18382aab6d202bc1c4c527c6c",
+     "size_bytes": 87083
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.res.4",
+     "sha256": "9344a7ea3b0cc83b2d7f500fd161165f263c9aadb31b9b69b0922e7a739664ea",
+     "size_bytes": 785770
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.clu.4",
+     "sha256": "eaad8a7bcb9847d68e49388d3f9e0be3f7f888722f28ce46c921f745072ae6ed",
+     "size_bytes": 226459
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.res.5",
+     "sha256": "266baf698591241d3f7444114e29f27b6e2b8ab3e2b84ec365ddbcdb4b251ab5",
+     "size_bytes": 253817
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.clu.5",
+     "sha256": "c1b5f971531c5f1f9e7f222104715475022ec22b5622fd2478f618eeeb19a5bb",
+     "size_bytes": 60022
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.res.6",
+     "sha256": "fcb99b0739dba58e3597ab43aedffe0538a487b9771453305577ff82260517f6",
+     "size_bytes": 205664
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.clu.6",
+     "sha256": "23e86ecf6a797173dc9d91f4697ed652b97b644c4ceecbafd5284f6cba510442",
+     "size_bytes": 69575
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.res.7",
+     "sha256": "2c80576985cb916c8f3a83ec00bda4b8310a45a54e7e34c228947416f5fc308e",
+     "size_bytes": 421097
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.clu.7",
+     "sha256": "e5c500e4daea56e45c2027694abb2bfa6eecdb1799af8e97189bacee94c02ee1",
+     "size_bytes": 121276
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.res.8",
+     "sha256": "47de09be3a870c5c8c718c62e1046e3db00e166a7dc460e2c0e05b3118ee7282",
+     "size_bytes": 377196
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.clu.8",
+     "sha256": "4257fc224a182a66598e9b8b20fd3e14e6d7730e5b4ef5d925389c4f75f78435",
+     "size_bytes": 90473
+    },
+    {
+     "path": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.xml",
+     "sha256": "e7115d54114c4f361cf5101fa8296c4682734c1933b12cedf2d269975b696cb7",
+     "size_bytes": 46197
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "11-05_0-06-51/11-05_0-06-51.eeg",
+     "member": "pin01-11-04/11-05_0-06-51/11-05_0-06-51.eeg",
+     "sha256": "bec4fb3dea4892a74a88dbc7b349ba09119050bcc5d010eeac5409190c3094cb",
+     "size_bytes": 99574400
+    }
+   ]
+  },
+  {
+   "session": "11-05_0-24-7",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/pin01-11-04/11-05_0-24-7.tar.gz",
+   "file_name": "11-05_0-24-7.tar.gz",
+   "sha256": "0828c99be9021cd44360d6c95da77fdc28ca2406080a7231b5ffc846304acda4",
+   "size_bytes": 265054740,
+   "verified": false,
+   "default": false,
+   "n_units": 60,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.res.1",
+     "sha256": "03c7bfb13faa80c6ff9c409a598635ed28bae9e75556597828129081249b06fc",
+     "size_bytes": 468872
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.clu.1",
+     "sha256": "1f06e4d9047de8ffe1ac97d08b76d84ccfb6a8c051f51ed2dfbd8f07c3625ce1",
+     "size_bytes": 109974
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.res.2",
+     "sha256": "92f4d10fff906166b9144ef0696449dd1bd611521cc1ddf44842cec6154c39f6",
+     "size_bytes": 561628
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.clu.2",
+     "sha256": "9e46339a3f945c2204e2835e97cf6a3219a20bd492ccf69c6b4c113393551a29",
+     "size_bytes": 131990
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.res.3",
+     "sha256": "330a157c4c69b4ca8311c7d4f0ce4c36859d4fe9e0a58015ab34df43fbe8b862",
+     "size_bytes": 429789
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.clu.3",
+     "sha256": "78b641d77af688c67e01d360652db4e91e991c4302f5fcbc058f485495d30380",
+     "size_bytes": 101610
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.res.4",
+     "sha256": "c5d243ecfa5c057e295f84ec75fa900e8a514caf7b03f281bd146e396217e6a7",
+     "size_bytes": 331932
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.clu.4",
+     "sha256": "c83a0320712e1b0ebcb7ed3090a8fd6c4dcb2101239564f7d22d09d747210194",
+     "size_bytes": 92396
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.res.5",
+     "sha256": "3040997739dddc2087899e0b6b3297fef7432fcfbd4c1a0838e8a0bb69b75284",
+     "size_bytes": 193197
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.clu.5",
+     "sha256": "b73be0f7adc0ccb38a0fc57d640133782a064e557f521097d91c65f790356bc5",
+     "size_bytes": 46898
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.res.6",
+     "sha256": "e5128cf5a9b566549d54f9832af359ced6adf64017ad1b7f4f32f5ffac741f03",
+     "size_bytes": 180264
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.clu.6",
+     "sha256": "ac18b13469fc735e0469b0df8d4a083c3befb91d9f18c758165b56364866cb98",
+     "size_bytes": 59992
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.res.7",
+     "sha256": "6c7547b0a5c959dabea0634621d1c276f361b5b5ec991a73203d95a0b7e89a6b",
+     "size_bytes": 459691
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.clu.7",
+     "sha256": "a6844d3816f1106b7b303360ea3c39509dc5610d66face6b9dcaea8df08393c0",
+     "size_bytes": 117048
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.res.8",
+     "sha256": "532465346d3592a3e5807a430339fcefc36419e3cbbff72a32ba61bd40c04c4e",
+     "size_bytes": 404380
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.clu.8",
+     "sha256": "3e4dd50df365a8a4e9129c1e8c5bbd151417399f2c6b327f3e1eed6c9fbd5bbf",
+     "size_bytes": 96495
+    },
+    {
+     "path": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.xml",
+     "sha256": "e7115d54114c4f361cf5101fa8296c4682734c1933b12cedf2d269975b696cb7",
+     "size_bytes": 46197
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "11-05_0-24-7/11-05_0-24-7.eeg",
+     "member": "pin01-11-04/11-05_0-24-7/11-05_0-24-7.eeg",
+     "sha256": "352df7c8589a295a8c4e87e76068f25ffe9b497caa805d02dacec9bf0c3e14ca",
+     "size_bytes": 90782592
+    }
+   ]
+  },
+  {
+   "session": "2006-4-10_12-25-50",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-10/2006-4-10_12-25-50.tar.gz",
+   "file_name": "2006-4-10_12-25-50.tar.gz",
+   "sha256": "04b344db34ba3469708be1a6b2ba896eeb4c0629942855c21b22f9f93a8615e5",
+   "size_bytes": 840169223,
+   "verified": false,
+   "default": false,
+   "n_units": 28,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.res.1",
+     "sha256": "3724799c8c639f66a44a7d89632a75f39a188ee2598a7b858feac4b6c2c5d809",
+     "size_bytes": 1199863
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.clu.1",
+     "sha256": "759e817a4a55d18961da9ed6c2983d44bcbe957100db3a6c87908ca9f71a8a04",
+     "size_bytes": 273230
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.res.2",
+     "sha256": "0dd4c4f4f934d5bd34612e4ca85fde8d3631c69d41ce6f1e45db46422f65e042",
+     "size_bytes": 1480915
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.clu.2",
+     "sha256": "9d636539bf544a240d29a40a8954cc12ac245805209f52892d93a173794a40cc",
+     "size_bytes": 342268
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.res.3",
+     "sha256": "2c960b3bcb613c4180f7ccfabaaee0ccadd7e7ef7233f4402a252bba74f6795b",
+     "size_bytes": 1291734
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.clu.3",
+     "sha256": "691f79a618a51f53b38aacfccd5ddfecfbad45ce16bd141f738674302c4ed72c",
+     "size_bytes": 377109
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.res.4",
+     "sha256": "f82800eb8e7938772c7c7b5fc1211a15bcbea1e8b72a793181cd61aebe183cd3",
+     "size_bytes": 1679637
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.clu.4",
+     "sha256": "6818b3ccdc09f0b73f9bab3894ef8e9d047668f565715ba53695918a76d49802",
+     "size_bytes": 384352
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.res.5",
+     "sha256": "2f12a8404a5dfb7a3b188aeff11ad269e4372e6d83b8ff1a374e5c23053111f5",
+     "size_bytes": 748205
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.clu.5",
+     "sha256": "2684564aeb071a33db598b4f1a0a16da2ac438b8069ed1a50e3552f07ff9042d",
+     "size_bytes": 171336
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.res.6",
+     "sha256": "501c77ddc758e83f1ce7e0c120b56623c989af6e9cbf7e412a890659d8a27136",
+     "size_bytes": 820752
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.clu.6",
+     "sha256": "b4e9ab34ad3e963fa85a7d733190885a7e8040280001a4defb495720fcfb984f",
+     "size_bytes": 187606
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.res.7",
+     "sha256": "81849e48b1175f2b3a7998b39226ebc7bea126cd5ce5b6c0f7c29121b80c60af",
+     "size_bytes": 648273
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.clu.7",
+     "sha256": "b03d520bd33533c75783153e2946714a4cb117c9cbd54155ce55dbb22666b507",
+     "size_bytes": 148490
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.res.8",
+     "sha256": "f240fa31b8d98c4a9685f833dc5eba8e83b401c56df04d12ab6662a9f154b77f",
+     "size_bytes": 1151466
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.clu.8",
+     "sha256": "30289e17b897c33ae200e2361b653b5dd06fc7e0745f5336901974dc98b29bf6",
+     "size_bytes": 261494
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.xml",
+     "sha256": "c4a8572090993040b5415b737eb964073f687a36f7b901d62f0b4441551feaf9",
+     "size_bytes": 43296
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-10_12-25-50/2006-4-10_12-25-50.eeg",
+     "member": "vvp01-4-10/2006-4-10_12-25-50/2006-4-10_12-25-50.eeg",
+     "sha256": "6153d4cc50255d1c9ae8c0d148a58fde5ebeed00e31fde184045bb0df0c5e81a",
+     "size_bytes": 231049728
+    }
+   ]
+  },
+  {
+   "session": "2006-4-10_12-58-3",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-10/2006-4-10_12-58-3.tar.gz",
+   "file_name": "2006-4-10_12-58-3.tar.gz",
+   "sha256": "ffebce5bbe62ddb85d2474a7b13a793a23ace5fbfed43608c0d82b094c522e6c",
+   "size_bytes": 845809219,
+   "verified": false,
+   "default": false,
+   "n_units": 29,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.res.1",
+     "sha256": "0f2b7abf28eaf798c33b1d4a8f7b8f034e14a4fdbb104dc444980fd68b37ab59",
+     "size_bytes": 1149746
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.clu.1",
+     "sha256": "36fed93cbef8b6ef4eb4b4bf117ceaffbb9fd001a0d9b55e40770c032591cfc2",
+     "size_bytes": 262320
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.res.2",
+     "sha256": "88089ac39a5f197a31a2bed82d7021b0329948760748b600552ce238af79f4bc",
+     "size_bytes": 1513495
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.clu.2",
+     "sha256": "4f511fc84d76a05f759a6a1107a82f8334a37b17223bb84694ebab10b8f12109",
+     "size_bytes": 355605
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.res.3",
+     "sha256": "e282555298e4bc93beb7419a04dc84c7b65302622cf609b82c6852904dca69aa",
+     "size_bytes": 1315213
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.clu.3",
+     "sha256": "3e75a094654534840365094d1316883ae8ca826719bb085f3f0df7a8ae0b6ec0",
+     "size_bytes": 378916
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.res.4",
+     "sha256": "b4a95c4a1e4a9ced909e6d81dc8e2c059646e0340c9ca093bfdfd02eb3aaab5f",
+     "size_bytes": 1590438
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.clu.4",
+     "sha256": "93cbdc39d16714ae75002ebdac961211d77b2b772ca0591c295fd1a6bab691e3",
+     "size_bytes": 364400
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.res.5",
+     "sha256": "dec47883b033200353da9c4214e02d5f055c63f9f1ae320038adf82c690be2dc",
+     "size_bytes": 858702
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.clu.5",
+     "sha256": "f4dec5b0e898455c86b9985469b94179d501834c778e6e55c2156a1073c20a47",
+     "size_bytes": 196162
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.res.6",
+     "sha256": "fcbe888bdf15eb4d0c6de4afbff397a9d7be22d3dbb831ab3adb922ab776b8c3",
+     "size_bytes": 711557
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.clu.6",
+     "sha256": "ed93c35cc30700f19821a9d6c82f5b108063b9ce006079cefeeb0ba079a4e543",
+     "size_bytes": 162482
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.res.7",
+     "sha256": "fc431ce43ffccd436e2e25b44c288e3f5ab2065d399467957dd712adedb151ff",
+     "size_bytes": 678851
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.clu.7",
+     "sha256": "bcf267d227d4d75482ca9c9c0d3ba897820cc0be87c7fc63e80f72a182b121cc",
+     "size_bytes": 155548
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.res.8",
+     "sha256": "f1593172acd678dd69be1e688b00e7ada249a6427c156974d8c7a59639c6480f",
+     "size_bytes": 1121306
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.clu.8",
+     "sha256": "a5c892c415e56fe9d8b07f4d44f4c697e5318debb16e2870235b528479ca868c",
+     "size_bytes": 256316
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.xml",
+     "sha256": "c4a8572090993040b5415b737eb964073f687a36f7b901d62f0b4441551feaf9",
+     "size_bytes": 43296
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-10_12-58-3/2006-4-10_12-58-3.eeg",
+     "member": "vvp01-4-10/2006-4-10_12-58-3/2006-4-10_12-58-3.eeg",
+     "sha256": "6d52ab4d021f80dbcbe0c270f828c956e60c2c35ada9547fde0ebc57639c060a",
+     "size_bytes": 238833408
+    }
+   ]
+  },
+  {
+   "session": "2006-4-10_14-22-10",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-10/2006-4-10_14-22-10.tar.gz",
+   "file_name": "2006-4-10_14-22-10.tar.gz",
+   "sha256": "519397797235aa9d903ce183400134cde295529659916ee540b6ccf214efbf3c",
+   "size_bytes": 1050482263,
+   "verified": false,
+   "default": false,
+   "n_units": 30,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.res.1",
+     "sha256": "d0d55cc520513509cce279155e01e6c2dfac6634573a5767419443313f1313dc",
+     "size_bytes": 1374475
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.clu.1",
+     "sha256": "89d037975e1424c737c35b3e9798aa2aa590fc928f9c37f998bbf6ffd39b9a44",
+     "size_bytes": 310676
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.res.2",
+     "sha256": "0703ae7adb5a335b868b34157c60f700fb102bc2ec892b0db10368328e02995d",
+     "size_bytes": 1219877
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.clu.2",
+     "sha256": "9939b4e8a8754b3279d36e04485e86d55a20fb50a06bf549f5ef863d2516cf78",
+     "size_bytes": 291555
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.res.3",
+     "sha256": "377bacc8a44b8f75adc5be837464516594477bcc84cfeff546a616cdfd49a92d",
+     "size_bytes": 1891006
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.clu.3",
+     "sha256": "cb229b3d11cfb0bbe54e4868dab417b34ec2f51fb6976ea58f85d22245049a93",
+     "size_bytes": 514659
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.res.4",
+     "sha256": "86784ffa99732b119f2c4b3a7a29a035eaad0df0a594e3ab8dcff31f52c73336",
+     "size_bytes": 2243142
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.clu.4",
+     "sha256": "e8e8f5aaf5dc8eadaa8267aa3985ac6613761a84de7958646a6fcf4f8fdf6466",
+     "size_bytes": 509410
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.res.5",
+     "sha256": "b707c5a8b65d031cf085eb47d8f1ec97885d2d4f040225acb586cbf5c43638db",
+     "size_bytes": 1269093
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.clu.5",
+     "sha256": "561c8d0a1cbfb507e503407bd7aece9014193df279c062bf236723e1eae09cb6",
+     "size_bytes": 288802
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.res.6",
+     "sha256": "9baf44630876f8e05e3223ad203f63a271c87c229555b825acac92ed204b0247",
+     "size_bytes": 1102051
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.clu.6",
+     "sha256": "1391de4a5d051af0fa44fc85ed7fe0c245af806fe21c201c44c889ae68986297",
+     "size_bytes": 250414
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.res.7",
+     "sha256": "91667fc818d44ff5abfd16285fb6caddd8ac68c61d2c665310d67f5c0bf5dbd0",
+     "size_bytes": 948526
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.clu.7",
+     "sha256": "6c4218da7e4aeb4f53431626cfd90f8f6c4ff54bb4bbc3dac02b649f97083474",
+     "size_bytes": 215608
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.res.8",
+     "sha256": "46ccbe08ddeb50f3f95cd5b5f0af525a4851e344890693c52ff0f03d2b3ec11b",
+     "size_bytes": 1458144
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.clu.8",
+     "sha256": "cdfa1802c84b7136f1390873e0c3aa3725913e72750fa0831f8456eb327d89a2",
+     "size_bytes": 331126
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.xml",
+     "sha256": "c4a8572090993040b5415b737eb964073f687a36f7b901d62f0b4441551feaf9",
+     "size_bytes": 43296
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-10_14-22-10/2006-4-10_14-22-10.eeg",
+     "member": "vvp01-4-10/2006-4-10_14-22-10/2006-4-10_14-22-10.eeg",
+     "sha256": "99782c6f4923cd2cac0b2ce4551ae52917a20bb7a56101524d782998421bf178",
+     "size_bytes": 273396096
+    }
+   ]
+  },
+  {
+   "session": "2006-4-10_19-11-57",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-10/2006-4-10_19-11-57.tar.gz",
+   "file_name": "2006-4-10_19-11-57.tar.gz",
+   "sha256": "da38dc89c9596d2f03f39c889c9b1721ec45cebfe531b7796a345348524b3941",
+   "size_bytes": 1070638749,
+   "verified": false,
+   "default": false,
+   "n_units": 33,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.res.1",
+     "sha256": "9a77c6026da85ed4a59e90522b4b69cda3d4a7ab8aa17426072d1bcf5eabe5ec",
+     "size_bytes": 2041222
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.clu.1",
+     "sha256": "710a167eb77021c8fbad2c86f5be92cc132abed79804bc97e6a559e8e9da0211",
+     "size_bytes": 465076
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.res.2",
+     "sha256": "5d5575c72c9f001ce7f7743d9c23ed6c1decfa7dc092c5cfea1281d1931b1998",
+     "size_bytes": 2346583
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.clu.2",
+     "sha256": "f141aa84a1f9111b8b3022961dd3c90d4865ffd525fc7800afb2cd7c53882a90",
+     "size_bytes": 598070
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.res.3",
+     "sha256": "c7631f8e9b3c3fd6fa68b79e0066397266c39874af1f482c6b5bc64944a8f495",
+     "size_bytes": 1853753
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.clu.3",
+     "sha256": "36edb372b8de73ba7e3bb9a5696376e3b3ef2f2452094953fd75868011532dcf",
+     "size_bytes": 503320
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.res.4",
+     "sha256": "a2c56c85c7b7a1dbac4c62f196f503d8f35d02f2c73e261a190ff163bd194f31",
+     "size_bytes": 1643475
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.clu.4",
+     "sha256": "f021ab73197ecfdaefbe41c8f1a5dd3aace00a2c69393ea3856276d6705420a7",
+     "size_bytes": 376210
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.res.5",
+     "sha256": "69d056b8c2ca810f121e513976d2eecb0eecaa688811a02c8cd307f1d7227110",
+     "size_bytes": 1057092
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.clu.5",
+     "sha256": "fac72b76d04e025d98656cd16d5c02923eeffa906e4c465345a456ffb7c92dcb",
+     "size_bytes": 241130
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.res.6",
+     "sha256": "260345cf6d3552a5e4b2052acd1bbdcbd2054f2aa52a129422dbb71749470711",
+     "size_bytes": 1038690
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.clu.6",
+     "sha256": "75d91404b47560c627247db8d0e2d5eba5ad7b963ad30821d3d1285f301324af",
+     "size_bytes": 236498
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.res.7",
+     "sha256": "9ddd0d64a0925bcc35d58eccd91968a90b90dbd861510ed2129a1a1b46e00036",
+     "size_bytes": 864811
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.clu.7",
+     "sha256": "6702caa3a8977dfe6a0eaca4f49cdd2ef7a32b61eb51090084cda76d3a6f1ad2",
+     "size_bytes": 198044
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.res.8",
+     "sha256": "a760cfb01c8670122f179ef8ac29483074cdbe852b31c6440335f62e4c3027b4",
+     "size_bytes": 1251542
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.clu.8",
+     "sha256": "498b9403a70078626628540756416f0a57c140500140b45dadf841f05750ee87",
+     "size_bytes": 286564
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.xml",
+     "sha256": "c4a8572090993040b5415b737eb964073f687a36f7b901d62f0b4441551feaf9",
+     "size_bytes": 43296
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-10_19-11-57/2006-4-10_19-11-57.eeg",
+     "member": "vvp01-4-10/2006-4-10_19-11-57/2006-4-10_19-11-57.eeg",
+     "sha256": "0216a2bf7db8a1157f0049910d92a484fba2584a3bf0cf374927b352d695f7e9",
+     "size_bytes": 240285312
+    }
+   ]
+  },
+  {
+   "session": "2006-4-10_21-2-40",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-10/2006-4-10_21-2-40.tar.gz",
+   "file_name": "2006-4-10_21-2-40.tar.gz",
+   "sha256": "c559cab551b3027af66ee7654bdf1a0ff07a1c99a378975f7725f68a39b9d68c",
+   "size_bytes": 804544896,
+   "verified": false,
+   "default": false,
+   "n_units": 31,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.res.1",
+     "sha256": "09fbd6a35b3eeee7e0db1644269261116b5ffbb73c8649720740a3d42022bdd0",
+     "size_bytes": 1743116
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.clu.1",
+     "sha256": "7698bfae0b477ac0b4a042fd3c099de334afa4494f578b8e9a5f4fc914fef3b6",
+     "size_bytes": 400752
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.res.2",
+     "sha256": "9bb6d82669eceaf99b1fc15860359a05cd474bac5559db64a6d75b2fb7786e35",
+     "size_bytes": 1692591
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.clu.2",
+     "sha256": "aa9c0a2c7cd9f3cc2a891598905b1abcaef55cce11912f6429c75450fe633222",
+     "size_bytes": 422792
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.res.3",
+     "sha256": "5bfdd7419685cbfaa560f8bf28fdd8409320fec78be5c0a590eef3288a52ac33",
+     "size_bytes": 1392987
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.clu.3",
+     "sha256": "f7dbbd7c1d6ab3951276920a732003c2e77da976c947e3428bdc4eef6d352563",
+     "size_bytes": 388533
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.res.4",
+     "sha256": "e5274e9363e0d2ce47dd7d9d7a3a49b98119a534f9bc5e39a02c69650d33e07b",
+     "size_bytes": 1132567
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.clu.4",
+     "sha256": "b2f1331c8f25b03ac4035dc058828b0d947a88546cb34c14a7b323a90934e9e0",
+     "size_bytes": 260726
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.res.5",
+     "sha256": "8922378471046974e6d2b8cd5ced49b6231a064b7d0b3515a020b5f62193c59e",
+     "size_bytes": 878805
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.clu.5",
+     "sha256": "9e5903af621174ca13a53ca9a038a84e76b61d562bbdbf2e68cb1b0c914f34c9",
+     "size_bytes": 201912
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.res.6",
+     "sha256": "3495877bc862e22424fc09d18ab56d04477c5c6a23828222d331e5e058200f4e",
+     "size_bytes": 776768
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.clu.6",
+     "sha256": "4d7f3d5cc60167ab615c7a8ca67ffb71807b221b5a380594efad95244e122258",
+     "size_bytes": 178588
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.res.7",
+     "sha256": "34d16f80a695cd07195fdef69f9eaf18602a8883b95b85634e64316a5c7bffea",
+     "size_bytes": 584740
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.clu.7",
+     "sha256": "e04b9a8df65b68724a9c4e76d5e5b9c7eacc3cd8e4bd20307ea02490d5fbeb47",
+     "size_bytes": 134330
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.res.8",
+     "sha256": "0df1a05dff9d5e4fe39c25c17df28a515207b5c014b11d04c7eac552a0a05e49",
+     "size_bytes": 884545
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.clu.8",
+     "sha256": "c36b80756036ff636b87579f3b7f9410297b6aebb6cf97981f79a9edae35915b",
+     "size_bytes": 203154
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.xml",
+     "sha256": "c4a8572090993040b5415b737eb964073f687a36f7b901d62f0b4441551feaf9",
+     "size_bytes": 43296
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-10_21-2-40/2006-4-10_21-2-40.eeg",
+     "member": "vvp01-4-10/2006-4-10_21-2-40/2006-4-10_21-2-40.eeg",
+     "sha256": "6abac9020d8a373343c4ba36102e07b1727201d052153ea794010e2b7d4cd58a",
+     "size_bytes": 176402816
+    }
+   ]
+  },
+  {
+   "session": "2006-4-10_21-32-13",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-10/2006-4-10_21-32-13.tar.gz",
+   "file_name": "2006-4-10_21-32-13.tar.gz",
+   "sha256": "2e33585f50cd1f7d3e66cb1fc8e64813b4066d63db4151045ccdbe4a1a241229",
+   "size_bytes": 1195793952,
+   "verified": false,
+   "default": false,
+   "n_units": 29,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.res.1",
+     "sha256": "f741ffcc020bd433ef270f4843a95fe8bf831f85d4dd2c076edb56a550e2c992",
+     "size_bytes": 2368697
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.clu.1",
+     "sha256": "4f1214393a864affa24ef1daa0ced6e201fa591af0e9ade7ff20dbd9f7b765af",
+     "size_bytes": 541174
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.res.2",
+     "sha256": "20f9e542a6663754d74c1a214111d5fab4fa83a6d172f4e91fce4b61a918ad8a",
+     "size_bytes": 2264765
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.clu.2",
+     "sha256": "8511d7c2b590993c31e0975f45fc98f2fc30122b3b25fd428626545b6aa5af9d",
+     "size_bytes": 561512
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.res.3",
+     "sha256": "95181240fcc6df77b0d9ebde618bca4937dc9bf22cba28f5359f32eefa261c71",
+     "size_bytes": 1766147
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.clu.3",
+     "sha256": "405bc679d361d7e7cec23477633a3430341dcdc251858e035871e507c94bbd45",
+     "size_bytes": 487316
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.res.4",
+     "sha256": "1da0e564db427fd8b8d06165d84952ce7ff17293d1f909c9635f2ffcbfdb5722",
+     "size_bytes": 1924288
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.clu.4",
+     "sha256": "6c47f726996f1219a2d8a2a15cd125bd4b01a0cc97590e1ba088a1bb2aad0f3d",
+     "size_bytes": 440748
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.res.5",
+     "sha256": "db12f6d9c9bd993fcb964f2c025ad5024ceede8dbd5299712b6b44cf82925be4",
+     "size_bytes": 1176725
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.clu.5",
+     "sha256": "5eff0910e38f5d2d3da1e916dd3353371a9772dd19f790097359a5232abd62c3",
+     "size_bytes": 269870
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.res.6",
+     "sha256": "2d4fe1634d8ccdc8e969721fcea3f28a168f6089d37ada9fb9ef16b4f7a27a71",
+     "size_bytes": 1201424
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.clu.6",
+     "sha256": "bec20605d3fdd5613c5e9a6b57ccb9af6c1ea478973010b3ad37dff31a4269ed",
+     "size_bytes": 275478
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.res.7",
+     "sha256": "5846f57054dfd95d67327316319493d4a433dbd708ce5c45571c85665ba1eed4",
+     "size_bytes": 1162168
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.clu.7",
+     "sha256": "57890ff6f3e4cdb2c4d38c2531d6b0ca74cf94fa807198e3986b171cd472c716",
+     "size_bytes": 266196
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.res.8",
+     "sha256": "142a516f4061f2be777b9c18f4fe624297938f70fb25bd0be365cb5928f8b318",
+     "size_bytes": 2612597
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.clu.8",
+     "sha256": "16cb9efce466b8935a53b1cfa571071b8c69e3e61a1a36e92b90a4c3a96936c2",
+     "size_bytes": 595430
+    },
+    {
+     "path": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.xml",
+     "sha256": "c4a8572090993040b5415b737eb964073f687a36f7b901d62f0b4441551feaf9",
+     "size_bytes": 43296
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-10_21-32-13/2006-4-10_21-32-13.eeg",
+     "member": "vvp01-4-10/2006-4-10_21-32-13/2006-4-10_21-32-13.eeg",
+     "sha256": "5310b2a53b6464817326da8eeb5f8367a95d93cf7f36ded02ae9464fe6036262",
+     "size_bytes": 204593408
+    }
+   ]
+  },
+  {
+   "session": "2006-4-18_13-06-01",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-18/2006-4-18_13-06-01.tar.gz",
+   "file_name": "2006-4-18_13-06-01.tar.gz",
+   "sha256": "cccff4eb24c1d369d5491bf12dbda96e9ea6daff28d1535de34fd042b613ccdc",
+   "size_bytes": 568311970,
+   "verified": false,
+   "default": false,
+   "n_units": 49,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.res.1",
+     "sha256": "d76746eedd4f4c60f3ca925943d472c4cca1feedb81084c670c9ae5b3dd8576b",
+     "size_bytes": 445909
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.clu.1",
+     "sha256": "7bf25975328b547ac39eab2a34aa36490b3ed74a65f0554b0154c238bd89a3f0",
+     "size_bytes": 103784
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.res.2",
+     "sha256": "10a7cf8e39d99323d0720366c007c5dc004a97d88f03bd5b9566b1c849bd1ff5",
+     "size_bytes": 782922
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.clu.2",
+     "sha256": "3830c7c5b8ac81c94c3b840a529d018d9571897c92d2f2e4dd32fb86fa13eca8",
+     "size_bytes": 187046
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.res.3",
+     "sha256": "765bef8d9075ef3d54625e23c0cb056d3ac2f87e5cd89575f9fadf9e123f453b",
+     "size_bytes": 1138195
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.clu.3",
+     "sha256": "369344468317e757a083597828b5d9e523bbed30011d7a7fbaaf3e783810aa4f",
+     "size_bytes": 266310
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.res.4",
+     "sha256": "134cd27844b1e8a702a5aa1fa02a4abf2595b94cec9008a1c120f5f701f56c77",
+     "size_bytes": 949257
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.clu.4",
+     "sha256": "6b7004d72ad74e118cd2e605cf7fe69fd37d4077861e7c0e5341d7ae0261398f",
+     "size_bytes": 220753
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.res.5",
+     "sha256": "11eb178b4bf26a3538ea96b66d73e04385355c7573322b156228bd1f926c0a14",
+     "size_bytes": 814029
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.clu.5",
+     "sha256": "9b891284ded06c5ac260fc287119a44c8b9e39e66b50270639dff164e7cfa403",
+     "size_bytes": 217802
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.res.6",
+     "sha256": "b3b46e5bc71c18e74a1820f81e12c5798f46b60202e87fbc4bf1a069bcc43e75",
+     "size_bytes": 425447
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.clu.6",
+     "sha256": "589a1a7d6496092af6467f12e70ccdf996dbef1f07893f74a902fe0ae81a7597",
+     "size_bytes": 98933
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.res.7",
+     "sha256": "0227bc62af978f406d4ae07d916fc7f8e3128b13535be6c767b13622968c443f",
+     "size_bytes": 459734
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.clu.7",
+     "sha256": "c044b6c7405be16d965bf70caf78891516190af7ffd38ce9295d2179dfa464b0",
+     "size_bytes": 107377
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.res.8",
+     "sha256": "972daea621d0090355f6b2b2f8a80b7eb70138fb7f3cc69e9ea07bd83ff7098d",
+     "size_bytes": 1205596
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.clu.8",
+     "sha256": "dc9a61f14352b1fa3699f29851447887882dfb71263e0c099587b313a12c172e",
+     "size_bytes": 322063
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.xml",
+     "sha256": "4a4dd9da35e16ca64e4119824eabbccd1df1fb31e91eaea4702881ea28f64b68",
+     "size_bytes": 49417
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-18_13-06-01/2006-4-18_13-06-01.eeg",
+     "member": "vvp01-4-18/2006-4-18_13-06-01/2006-4-18_13-06-01.eeg",
+     "sha256": "bab430d170d783c4be50b28bc3045e9b689d7321b9b9415448105fb6a66f87a4",
+     "size_bytes": 132281984
+    }
+   ]
+  },
+  {
+   "session": "2006-4-18_13-28-57",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-18/2006-4-18_13-28-57.tar.gz",
+   "file_name": "2006-4-18_13-28-57.tar.gz",
+   "sha256": "d6fc8931819d90c6ba98794851bf576439353da880706ca2a531fee8eb7b8535",
+   "size_bytes": 466034404,
+   "verified": false,
+   "default": false,
+   "n_units": 51,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.res.1",
+     "sha256": "9404f3eac36161e2b094145b4235ac635c9dc809f7f6ad2b864cde365c73754a",
+     "size_bytes": 342206
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.clu.1",
+     "sha256": "3a10d49b58f56696beb1af7f4178c359bee88b8fa76f1c2efb9b9f30e7a9bc7e",
+     "size_bytes": 80774
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.res.2",
+     "sha256": "488567316ef0b1c51dc948bc385a2d7b12dda37c639a629cb91ec4e2f47b76a3",
+     "size_bytes": 592803
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.clu.2",
+     "sha256": "5d8ce33eba291151d1cd0789dc678098a7398327b6b884527c45d0fbe4546531",
+     "size_bytes": 142922
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.res.3",
+     "sha256": "9ff3acf80f2b34c071f5a93b6dfc567c827e05cbbbab752f358cc14bd2081d66",
+     "size_bytes": 892825
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.clu.3",
+     "sha256": "706a56a68a2bd6f0c97b52d41d8e658aff2cbb88287fa6ec7e07cd6ca94483c4",
+     "size_bytes": 211859
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.res.4",
+     "sha256": "c2769b3cb8ef4c7d654795c8a41895d014395dba6c69e106e3eda58ca1f56ed3",
+     "size_bytes": 789748
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.clu.4",
+     "sha256": "117a492e2cf7b969bbc99813ebdad2b4d4ecb8794ef7c43e1bc70b0651746ca4",
+     "size_bytes": 186765
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.res.5",
+     "sha256": "82c5093d6698b45b444e71f9ab47bd6cd9ecde8dd91c500af992dafff7d5ddef",
+     "size_bytes": 704066
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.clu.5",
+     "sha256": "87af1943ab12f0e0b9082a82c20e726355cf95098713b0b291e94d0819c33edb",
+     "size_bytes": 190367
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.res.6",
+     "sha256": "8b63cb7d5607a365a306c6e3ae511e95e11b25bc96432d0a9d341671fcb0c989",
+     "size_bytes": 333900
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.clu.6",
+     "sha256": "e44e2fb72321e6ebb3c31f0f78d4b3bce84b0fbed2f4b6a82c6e9e94c60efe0a",
+     "size_bytes": 78637
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.res.7",
+     "sha256": "27ddbf53fd92008742ad6eefdac8b368a176286747ee55ea303c38e5ee9c6c04",
+     "size_bytes": 350651
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.clu.7",
+     "sha256": "4446aa0634748ce5cd300a570e930044f40e7529b4c5497d0694dea7105057cf",
+     "size_bytes": 83446
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.res.8",
+     "sha256": "2e87cd85eec418f0e76da435c674ae6d4e71ee802509bc15d6d0aedce8649a47",
+     "size_bytes": 1067702
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.clu.8",
+     "sha256": "5ae2ac3b209fa3e72e8e2d6b2f9ff76bd63f34bf85c919582fb4f5d4b3da4c93",
+     "size_bytes": 296328
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.xml",
+     "sha256": "4a4dd9da35e16ca64e4119824eabbccd1df1fb31e91eaea4702881ea28f64b68",
+     "size_bytes": 49417
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-18_13-28-57/2006-4-18_13-28-57.eeg",
+     "member": "vvp01-4-18/2006-4-18_13-28-57/2006-4-18_13-28-57.eeg",
+     "sha256": "07426d7c84dab073c667a32f76077d83de2d7bd989e35302fe5a9f12cdd0e214",
+     "size_bytes": 103325184
+    }
+   ]
+  },
+  {
+   "session": "2006-4-18_15-23-32",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-18/2006-4-18_15-23-32.tar.gz",
+   "file_name": "2006-4-18_15-23-32.tar.gz",
+   "sha256": "c74376f1daea1e5e84af65696744987f3d590b8ea1312dffaab63e8db12822de",
+   "size_bytes": 431732208,
+   "verified": false,
+   "default": false,
+   "n_units": 49,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.res.1",
+     "sha256": "e37c83fc64f1307f5174d7a73c659b2a2af3dec5852f1937a994280f3e2de78d",
+     "size_bytes": 503397
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.clu.1",
+     "sha256": "0ef67f10c70c14e8af3f04e5640137a28ad2f348a317445d97c41f70f0e4b74f",
+     "size_bytes": 121012
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.res.2",
+     "sha256": "12bd071e92d66a4a35e9662b97e6137980fb8ea22aab9def2fa9deca2aca712e",
+     "size_bytes": 670394
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.clu.2",
+     "sha256": "0e2817422e217e5f34402ddd80cd6901a7eb5710151762e6ac6e22c7cd8befbd",
+     "size_bytes": 164120
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.res.3",
+     "sha256": "5b8bb8d5ba71a84356bf641c049fcc3f3b1fd24d1ba584ea6be5d7beb28ca12c",
+     "size_bytes": 552653
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.clu.3",
+     "sha256": "7905c1409a32be4845bd79e1539d0086ed99b342aeaf0f5f6472b1018e226b8e",
+     "size_bytes": 134018
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.res.4",
+     "sha256": "48c89eaf774dedddc57f85c49a0e092432a7c4a25bd607ed50b70574957b7306",
+     "size_bytes": 542918
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.clu.4",
+     "sha256": "6a85c5797dd8fdbb9b5d9f58f4eb96aed3ac7993e3313d05dbc734972e347745",
+     "size_bytes": 130743
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.res.5",
+     "sha256": "a0c1e79fb2f902b2df86015bef56e9ee81a856c93f58164f61652232bc2cbc6e",
+     "size_bytes": 743007
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.clu.5",
+     "sha256": "25d4e2d7ad02a6a8784eadc5acc01a2363697bc91bad2b00f80e3590157c9c46",
+     "size_bytes": 179637
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.res.6",
+     "sha256": "95a76f995881bd24443c5bf866139d4e56deb99166ae3d009e8bacc5b0eb07af",
+     "size_bytes": 743179
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.clu.6",
+     "sha256": "bf3d9eabe36126afce320c39578ce8e5f3a5bf6fc8aaa6387e3bf29068fc0ef0",
+     "size_bytes": 178503
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.res.7",
+     "sha256": "c8ad9a14c58dc8e78ce8a29c70fe8ed624e7b6d3ab8a7268850bd8a93dfb50d0",
+     "size_bytes": 579017
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.clu.7",
+     "sha256": "72f43ee3181fc18e37939bb8395ef2d8c6ae8907f0a9bdd3ac5ba79f6bb5f932",
+     "size_bytes": 153677
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.res.8",
+     "sha256": "999fe0ae8656b1ae336431559bd6d1b174bde62ae54ac5e42703b0bdccf12000",
+     "size_bytes": 397248
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.clu.8",
+     "sha256": "655571d41b0eb3c4f49cde5ade21897c42d8926516a0aaa36bfbcce04973c30d",
+     "size_bytes": 110417
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.xml",
+     "sha256": "4a4dd9da35e16ca64e4119824eabbccd1df1fb31e91eaea4702881ea28f64b68",
+     "size_bytes": 49417
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-18_15-23-32/2006-4-18_15-23-32.eeg",
+     "member": "vvp01-4-18/2006-4-18_15-23-32/2006-4-18_15-23-32.eeg",
+     "sha256": "374e2c6a05e5b1cf0a7ae4356b44e9162df6d16bab2a18927b0d5a4a6990fbd1",
+     "size_bytes": 84249088
+    }
+   ]
+  },
+  {
+   "session": "2006-4-18_15-38-02",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-18/2006-4-18_15-38-02.tar.gz",
+   "file_name": "2006-4-18_15-38-02.tar.gz",
+   "sha256": "212a43e2f5472cebef5c46652929e4ff63b96c8cce53be197213b1ff1ca611ee",
+   "size_bytes": 457641073,
+   "verified": false,
+   "default": false,
+   "n_units": 45,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.res.1",
+     "sha256": "11964e5c50cf4e467563596fa12978a09a3a6ff97e6efa694bc70926d5bb3360",
+     "size_bytes": 476218
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.clu.1",
+     "sha256": "f037c842e46a618a9609731a4eecce4d219a2d3f0d9202dcd47cdfd3f2d55f09",
+     "size_bytes": 114146
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.res.2",
+     "sha256": "5d6f6fde9e4bcb4dc10b2ebb886efd5f12d5ef0aecaeba06c07f28628029afae",
+     "size_bytes": 648912
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.clu.2",
+     "sha256": "d4589216f2a836dd5f826204678c5195f3a5699b5a67eee79959b76fdb67991a",
+     "size_bytes": 156397
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.res.3",
+     "sha256": "20158d90bbbbbc1455ad98ae0d4bdcb1593cedfbc5a35e9255fe3987b3ffc027",
+     "size_bytes": 563696
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.clu.3",
+     "sha256": "537e682ceb898fd3bf99be99f78aecccdc113dc05bd439ae66ceed86073e8571",
+     "size_bytes": 135663
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.res.4",
+     "sha256": "52dd278f9043c9e8b81ce5f7075f8542c0fb5c8d0c8f072ddc62d57cda26033f",
+     "size_bytes": 568287
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.clu.4",
+     "sha256": "4eb30c78155f0c7803eae2f0b4e43c39fb6ea4c45d577c2a1876e61b9bc6168b",
+     "size_bytes": 136263
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.res.5",
+     "sha256": "39710b8beaddd7b46842728419be15ebc4d8a53b34ae01a82151a670f1f4fb81",
+     "size_bytes": 891228
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.clu.5",
+     "sha256": "35a3ecd8e14a71e582cafdddc0292c7de81434228fbf0de123b8f8f0ad7ab019",
+     "size_bytes": 213821
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.res.6",
+     "sha256": "379f83a75338ce0e8de0b5ebf2925e4d51de301f547e21abf0a92be96258e8f3",
+     "size_bytes": 771292
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.clu.6",
+     "sha256": "31d1cebf55b8885b7e26d35df06dfbfafd78b90f007198dead1a4f49c9e57c4d",
+     "size_bytes": 185199
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.res.7",
+     "sha256": "1b34a40d54d5e530f1220cf2e527dd3c6b288aed23ccab4d3bff03c9fbaeeac2",
+     "size_bytes": 691521
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.clu.7",
+     "sha256": "b2cc30c04d747f7b1cb89ef925d81da129c6a4d81f82a9678eaf2f6ea594f6e4",
+     "size_bytes": 181424
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.res.8",
+     "sha256": "685b6cd171a38640bcd0e3d119c8c69f66716a8cb353236bd624556c57f3c0fb",
+     "size_bytes": 456148
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.clu.8",
+     "sha256": "5cd9cb0068c5d34ad4b17460bfa720e38f0cfbd615fcad6a2a68c6b7303719fa",
+     "size_bytes": 125543
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.xml",
+     "sha256": "4a4dd9da35e16ca64e4119824eabbccd1df1fb31e91eaea4702881ea28f64b68",
+     "size_bytes": 49417
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-18_15-38-02/2006-4-18_15-38-02.eeg",
+     "member": "vvp01-4-18/2006-4-18_15-38-02/2006-4-18_15-38-02.eeg",
+     "sha256": "cb9f7f398f6cf7388cd452fc2b40ae965e1443ffc34fb331aaef8fcb47650f7e",
+     "size_bytes": 86547968
+    }
+   ]
+  },
+  {
+   "session": "2006-4-18_18-26-36",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-18/2006-4-18_18-26-36.tar.gz",
+   "file_name": "2006-4-18_18-26-36.tar.gz",
+   "sha256": "6eb2d0a92d98c62357261d9bdf534a360165d1ab0f61ca083a72f4375a05a3c3",
+   "size_bytes": 1575744255,
+   "verified": false,
+   "default": false,
+   "n_units": 49,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.res.1",
+     "sha256": "74b6839a0daf2e178dbced8d42e995be588e3c8adbbb3d03f07175eba5f9f8dc",
+     "size_bytes": 2392436
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.clu.1",
+     "sha256": "70f654a93c11defe5c72a4e08054037da21f661d1dab17eba90fbcfd64077172",
+     "size_bytes": 544600
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.res.2",
+     "sha256": "e950a7960f41220fab7496cbb0e964b83dd5c8a7bee56db615c34eecb0a146ba",
+     "size_bytes": 2353829
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.clu.2",
+     "sha256": "95617f0472869a432b09829faf77965def4960d7c4db2c5826d918ed1c28c15f",
+     "size_bytes": 539926
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.res.3",
+     "sha256": "9fc6372084530dbf9850b2cff7ff7ce541515d3b2b56591608455d25b5c6c079",
+     "size_bytes": 2045071
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.clu.3",
+     "sha256": "ebecb87942b2511b2bd66eb05e552252b7f05875233fc6c89fff36e8dd07289e",
+     "size_bytes": 468025
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.res.4",
+     "sha256": "d816a1751df79b4254505a1b671edc0aa3b0c1ee34f82872cb39eb785c5056cf",
+     "size_bytes": 1953798
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.clu.4",
+     "sha256": "f096b4734a585af7027d2465231c9b89a8668497e41f7f5b37666c43d7b9e69c",
+     "size_bytes": 444945
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.res.5",
+     "sha256": "6db359587d01d03842832a75f7b43d6ce88ea5beb80149ed00e69866413ab568",
+     "size_bytes": 3225803
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.clu.5",
+     "sha256": "3181a1dcb8eee754413acc23f53be7f688ce0c9646a336fc6d68aa8cac30a0e8",
+     "size_bytes": 732559
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.res.6",
+     "sha256": "124f176a87b6daf4b2964f8b9c994ee0fca04d927196442a3777e9da9c0f6eae",
+     "size_bytes": 2920559
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.clu.6",
+     "sha256": "2f9c4c1b3c7fe7ef6b7f597eb861dcf04d896d25d96610f206d89720aeffe3ff",
+     "size_bytes": 664881
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.res.7",
+     "sha256": "0ddac39a806ccf71e954134d6ceafbdb81cb792a0222bbc4227ba2a56218e92d",
+     "size_bytes": 2824744
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.clu.7",
+     "sha256": "d816e8a8121a49beda3c7c94a07f28a63a0048aed7c9dd3eaf0bd1a3b416a78f",
+     "size_bytes": 691530
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.res.8",
+     "sha256": "02e7aea0982538fe0b65018b8109d0067fd55098919e5d14d114fd31c9a9bece",
+     "size_bytes": 1438552
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.clu.8",
+     "sha256": "d1a8cbc151245d6ae703e88f3a4a871949ec618699739efa018a62cd52158fb3",
+     "size_bytes": 371046
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.xml",
+     "sha256": "4a4dd9da35e16ca64e4119824eabbccd1df1fb31e91eaea4702881ea28f64b68",
+     "size_bytes": 49417
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-18_18-26-36/2006-4-18_18-26-36.eeg",
+     "member": "vvp01-4-18/2006-4-18_18-26-36/2006-4-18_18-26-36.eeg",
+     "sha256": "82161b3cf311025b162f4874430ef03c51b6e0d4f70aad6b4b25f787769a8159",
+     "size_bytes": 258595072
+    }
+   ]
+  },
+  {
+   "session": "2006-4-18_21-22-11",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-18/2006-4-18_21-22-11.tar.gz",
+   "file_name": "2006-4-18_21-22-11.tar.gz",
+   "sha256": "7255e8edfb37fa5cd8fc1ed58d239574fd5e47711947b87ce2b60821a7e59c22",
+   "size_bytes": 2725919862,
+   "verified": false,
+   "default": false,
+   "n_units": 51,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.res.1",
+     "sha256": "beb7d93428e250e7969d3ae2fa114b38a027f78b84c5af36f19bfaecc17b55b9",
+     "size_bytes": 3501953
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.clu.1",
+     "sha256": "0be7c41235fb6b22fb79f74e8fddbd6333530b1d06b9fbbf6fc24fc1c93b60a2",
+     "size_bytes": 786208
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.res.2",
+     "sha256": "30aedea377c38ef4934bb9d1acd66349f43be878ff214b57867144b3ae7e8e94",
+     "size_bytes": 4161322
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.clu.2",
+     "sha256": "8d82b8aac2135144825d19b230f56bd6a8ebf420256a07873d49dca921a25b18",
+     "size_bytes": 937688
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.res.3",
+     "sha256": "a2ab832f32dfd87b66a26375573765a76dcc92ca7cc2eff007adab42c40813b7",
+     "size_bytes": 3149177
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.clu.3",
+     "sha256": "c00bbf2207cae37b4b61dfb68a8f33e4ab96d58d0757c4e3679bb34ee7affa2d",
+     "size_bytes": 717636
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.res.4",
+     "sha256": "3ca6a7c4d7c07bb2da007b2d56f59ed38b257adbee57c874b51cef9fcd71c236",
+     "size_bytes": 3171311
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.clu.4",
+     "sha256": "0e523498d0512840f130a0289778a86697c46e8b7d4e7ccecfbf97d019aedc19",
+     "size_bytes": 709935
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.res.5",
+     "sha256": "7ce79c48d3b996f5c4d28050441f236bb0322756f1ac11369c1465548306034c",
+     "size_bytes": 5891080
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.clu.5",
+     "sha256": "2ec01e96d14766e968ab99930d00e7c6b679ea9523232e692d708068323b1cdf",
+     "size_bytes": 1318119
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.res.6",
+     "sha256": "7a47fdd5f340e10a129ec361347fee445d1a380bdebd51f4f8d7eaff959deda2",
+     "size_bytes": 5162583
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.clu.6",
+     "sha256": "3bd5ac7dc1a2557bb4015d441168f7d24088d23e7e20bf142c5954e3c713566f",
+     "size_bytes": 1156105
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.res.7",
+     "sha256": "0fd05075770e1af5afa37492d523a32e4e05d1bc659e6be0008a7c4f1216acd2",
+     "size_bytes": 5042206
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.clu.7",
+     "sha256": "a8093a513e8ae4ac2687144fcf69a32f7202b3871edee1d266d6d0622dc550cf",
+     "size_bytes": 1221194
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.res.8",
+     "sha256": "b6035a0a3d07b9f838194e0c9a37c338c3ee8e9990ad64b99113138afd51e378",
+     "size_bytes": 2556012
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.clu.8",
+     "sha256": "b49781bc1d6f8b2007863b3254f2051d320d9413d811584c9e69375e3a053e33",
+     "size_bytes": 655647
+    },
+    {
+     "path": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.xml",
+     "sha256": "4a4dd9da35e16ca64e4119824eabbccd1df1fb31e91eaea4702881ea28f64b68",
+     "size_bytes": 49417
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-18_21-22-11/2006-4-18_21-22-11.eeg",
+     "member": "vvp01-4-18/2006-4-18_21-22-11/2006-4-18_21-22-11.eeg",
+     "sha256": "f253eed76284637c29309f2dbcc5ab1994f321bd94d5ef777c969c6e5e7d2b07",
+     "size_bytes": 507470464
+    }
+   ]
+  },
+  {
+   "session": "2006-4-9_16-40-54",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-9/2006-4-9_16-40-54.tar.gz",
+   "file_name": "2006-4-9_16-40-54.tar.gz",
+   "sha256": "0cfc734feb22460102d2136b060d9729c8e0e203369c01a695509116e2bcfd91",
+   "size_bytes": 1096559746,
+   "verified": false,
+   "default": false,
+   "n_units": 36,
+   "paper_session": true,
+   "paper_link": "inferred: listed among the 18 linear-track sessions of Maboudi et al. 2018 (Figure2.ipynb output), 'previously used by [Diba and Buzsáki, 2007]'",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.res.1",
+     "sha256": "77e42451f92815f7391397379d5c80c40d0939e3ef6ffefb4511e7223576ffad",
+     "size_bytes": 1962567
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.clu.1",
+     "sha256": "89e3b294a8a9c60d7497f34fb5157eb4c3a40d33ef7a4c5cdad7dfc45b8da7f3",
+     "size_bytes": 444974
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.res.2",
+     "sha256": "8a391e1bca3372713f349a0ddb5a0e02e99cd156c12d6b2efc07fe6c3ee55b90",
+     "size_bytes": 1379316
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.clu.2",
+     "sha256": "d144185f5f0f9bb39d58a2f4ecbbc52e896ace5f552be77e855c3fa059d7181c",
+     "size_bytes": 394390
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.res.3",
+     "sha256": "a50d7ec15c5ac3a6c0c26c91c727c29ab3efbca1b524f73adef89ac138d7d995",
+     "size_bytes": 1408588
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.clu.3",
+     "sha256": "a58c804292e9d5f9d0a09dcee668b7b8953ade70f04cd5185f4ba8c482ce468f",
+     "size_bytes": 440815
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.res.4",
+     "sha256": "8e09e91c1e3fc1eb6154a04f891d1dad71208163d6d667801c02fec0b14d7205",
+     "size_bytes": 2360440
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.clu.4",
+     "sha256": "32482d082095e3621da62128b7ccd07db05ae927cbb441f5b34dca9061687f76",
+     "size_bytes": 535700
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.res.5",
+     "sha256": "a335453470d3ac9fc5297597c56cf925adeb2b23eb778ec2e4534a12d14fb74e",
+     "size_bytes": 1607769
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.clu.5",
+     "sha256": "90ad8f8334794c71209d8275ad91387049bdf2745b9d3f54eecda2c147762cbc",
+     "size_bytes": 365476
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.res.6",
+     "sha256": "7bd1d1a3ded3ab929a496570fdd04ed489a607718b6b2a289ed93ec8a7580ce0",
+     "size_bytes": 849898
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.clu.6",
+     "sha256": "f4d1afa77d13bb7da13eb3b668daadeef5560ecb84aef4dece054d4ea693e9f5",
+     "size_bytes": 193554
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.res.7",
+     "sha256": "82093b126cb9d2ef3f615af02a09584442f99b2a77228f470e2729fba2f9ccdc",
+     "size_bytes": 875633
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.clu.7",
+     "sha256": "0c8b85c3a09c28d7141f825730f4dc438555430c3f7aaba34a20462a341720be",
+     "size_bytes": 198032
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.res.8",
+     "sha256": "d5708df52f9fc72eab9648bd08e465eebeb1134a4ef44c9e18eb1dc678a263c0",
+     "size_bytes": 1519505
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.clu.8",
+     "sha256": "023c3eec00b66fc20ec9f7cd470160982d6973abc816c229fcb9341c7e9153c2",
+     "size_bytes": 345048
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.xml",
+     "sha256": "37b9acfa16433f78e6033040e526a8f2c8d7d4bad88ee152d6345dcb3242ddc7",
+     "size_bytes": 42071
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-9_16-40-54/2006-4-9_16-40-54.eeg",
+     "member": "vvp01-4-9/2006-4-9_16-40-54/2006-4-9_16-40-54.eeg",
+     "sha256": "181c54150a9e485a3f1017e9a45f2f711c63ab0621e3e556f7bbc648e502970d",
+     "size_bytes": 283760896
+    }
+   ]
+  },
+  {
+   "session": "2006-4-9_17-29-30",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-9/2006-4-9_17-29-30.tar.gz",
+   "file_name": "2006-4-9_17-29-30.tar.gz",
+   "sha256": "623624d6557732656b77851f6facf1981d926c73b9882b3fe306c438e26c0656",
+   "size_bytes": 1110010571,
+   "verified": false,
+   "default": false,
+   "n_units": 39,
+   "paper_session": true,
+   "paper_link": "inferred: listed among the 18 linear-track sessions of Maboudi et al. 2018 (Figure2.ipynb output), 'previously used by [Diba and Buzsáki, 2007]'",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.res.1",
+     "sha256": "a5ed1ccb5db87bec9150aee0aec8477ef70c69beed900da013f211fca6577e8b",
+     "size_bytes": 2045376
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.clu.1",
+     "sha256": "ca2262eb8936b01fab93130c3f7629db37fbcdcd19b822c293dd2674e15d4c2a",
+     "size_bytes": 464124
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.res.2",
+     "sha256": "c3d5eb10481d90fd74ae3fb7e7bd4085646869aecb4d3896721274079511cc98",
+     "size_bytes": 1423375
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.clu.2",
+     "sha256": "48c55a4bd53a46eb86ba4d2f2603f4edf86e63da9c5b53931461e4dc369536f3",
+     "size_bytes": 383082
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.res.3",
+     "sha256": "ba9ba31908a5a5d3996e7fc0f925a99016593811397ead6ecf53737ae6c2c12d",
+     "size_bytes": 1303580
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.clu.3",
+     "sha256": "a14d8399d860154bb239fad5faecc196281ba08ae83dc951d21cf53fbde6ce18",
+     "size_bytes": 401771
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.res.4",
+     "sha256": "2ea374604ec0985e59c9af73442748ce96964c9f5d20d7f32b9d94739566ad9c",
+     "size_bytes": 2740071
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.clu.4",
+     "sha256": "4e11d5ee71449d600ec82aea2f221dd4af91c8502fdbc9fd3524de5462a607f3",
+     "size_bytes": 622156
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.res.5",
+     "sha256": "1d376290419866f6c33a6b47505132eaab5bb7f6d2db63c922d75c9f2c5bd762",
+     "size_bytes": 1437707
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.clu.5",
+     "sha256": "e22428b76cd1c6365f188032974a8c67162726a0f5f1e06a7017fcad42bf94c2",
+     "size_bytes": 327854
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.res.6",
+     "sha256": "bcb73d536064b207bc53df71e1c9beb25f76f63da11027c2eab0b95d9c9a053b",
+     "size_bytes": 822001
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.clu.6",
+     "sha256": "80cbd005a2b2f40989622c58ff114fcf9e8ed05c25f6a2602f26d7887ff3138b",
+     "size_bytes": 187216
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.res.7",
+     "sha256": "0760ad7966504c7154ad0ac5d7150df78592f9cdad6d3eae6cdd4071f41517fb",
+     "size_bytes": 921994
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.clu.7",
+     "sha256": "a217ce17b973527997e7e72ca0d5d333fae799ca5c2bf635db201d1afddf3c83",
+     "size_bytes": 210040
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.res.8",
+     "sha256": "29f33945fd6d4507eab7d02d093efec294e58ec6bcca5af9d71a674aa46c8a41",
+     "size_bytes": 1536586
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.clu.8",
+     "sha256": "8ec72a74fc9e791135e3e3eea3acf4d973da5f01b1f2cb3d54e6c879cc69f53d",
+     "size_bytes": 350152
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.xml",
+     "sha256": "37b9acfa16433f78e6033040e526a8f2c8d7d4bad88ee152d6345dcb3242ddc7",
+     "size_bytes": 42071
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-9_17-29-30/2006-4-9_17-29-30.eeg",
+     "member": "vvp01-4-9/2006-4-9_17-29-30/2006-4-9_17-29-30.eeg",
+     "sha256": "06d20b79ac918803dd31c2c06cf2cca89b42e39e8dc5e009cb8fdb8dc1fe7078",
+     "size_bytes": 281663744
+    }
+   ]
+  },
+  {
+   "session": "2006-4-9_18-43-47",
+   "archive": "CRCNS hc-3",
+   "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/vvp01-4-9/2006-4-9_18-43-47.tar.gz",
+   "file_name": "2006-4-9_18-43-47.tar.gz",
+   "sha256": "1b41d0eb2e2cf24a681231085ec49cf1708adda73ab86efac5f846c5b2fe8d7d",
+   "size_bytes": 1916026326,
+   "verified": false,
+   "default": false,
+   "n_units": 39,
+   "paper_session": false,
+   "paper_link": "none found: not among Maboudi et al. 2018's 18 sessions",
+   "verification": "",
+   "members": [
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.res.1",
+     "sha256": "cb4647934c9e161013a102963a447920a1cb47476b06ca8c344fb3f72d6f6e49",
+     "size_bytes": 2664146
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.clu.1",
+     "sha256": "685b2622f8570791afef8dad7a3e8b98fb34a85fe4367a25fa2da654a71c5fae",
+     "size_bytes": 569752
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.res.2",
+     "sha256": "c5a16e84a6c327c337351760759dc662aa7ffcd8fe0c297625a74f61f002e8b6",
+     "size_bytes": 2525960
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.clu.2",
+     "sha256": "c18c12d1ed21d8c4fbc76c337e1763265230fea00336de3b6ff2d1c5cab7440b",
+     "size_bytes": 602176
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.res.3",
+     "sha256": "7a3c792827835293bbd04a19a60e7f8c43b6eb42c8d33d47ec46d2af56c45018",
+     "size_bytes": 2142133
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.clu.3",
+     "sha256": "8ab520cb6e7117457304ce1a01f3dbc6c2a84921dae72ee819374b8af00c5fb2",
+     "size_bytes": 593444
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.res.4",
+     "sha256": "08db871e5dfcad831f014fb0e8fdceed3f398d66c098535302c71103239cf87a",
+     "size_bytes": 4863282
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.clu.4",
+     "sha256": "96f5e96d82252881a934571635cabe53e4660be94a1138f05bf589f3829ddf2b",
+     "size_bytes": 1047500
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.res.5",
+     "sha256": "85be53259ab3fd3b700b49db828f446f5c1f96f7f7583c026d7236d5c87c4f51",
+     "size_bytes": 1916135
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.clu.5",
+     "sha256": "ceabc33474430a3a595dd42329266ced025c0abdd439f13d4809ebc74efa56fd",
+     "size_bytes": 411432
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.res.6",
+     "sha256": "ff149ef12833ae9b2f470f11d5939838956b1feaa160146c50b75742b273e8c2",
+     "size_bytes": 1618417
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.clu.6",
+     "sha256": "4be95818de5cbd2da862ce52822686a213872b8e123175471cf6056df679b446",
+     "size_bytes": 348066
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.res.7",
+     "sha256": "249fe5fab3b00e4ae8a57bd9beb2e34e04f70e74a22c4fd1e9bbb836f4e9b955",
+     "size_bytes": 1200995
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.clu.7",
+     "sha256": "fc9ee32dbb8ceb7e3ef6ae797cd7bf108261f74b98ed67aa809a64792a69ed1c",
+     "size_bytes": 258974
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.res.8",
+     "sha256": "6db01ab662a77f65ddfa248a19b2d87857a68f802bf7fc2814f48f08abb77718",
+     "size_bytes": 1565468
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.clu.8",
+     "sha256": "b9269627bdcf54af838ad6124ce109bf77260135286cd95b569b18da7e497cb2",
+     "size_bytes": 337870
+    },
+    {
+     "path": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.xml",
+     "sha256": "37b9acfa16433f78e6033040e526a8f2c8d7d4bad88ee152d6345dcb3242ddc7",
+     "size_bytes": 42071
+    },
+    {
+     "path": "crcns-hc3-metadata-tables.zip",
+     "url": "https://portal.nersc.gov/project/crcns/download/index.php?fn=hc-3/docs/crcns-hc3-metadata-tables.zip",
+     "sha256": "ce26a636a24f35589dc3ade47722e06943b1b73fb6abd44aab111f7cbf75be1f",
+     "size_bytes": 1149865
+    }
+   ],
+   "lfp_files": [
+    {
+     "path": "2006-4-9_18-43-47/2006-4-9_18-43-47.eeg",
+     "member": "vvp01-4-9/2006-4-9_18-43-47/2006-4-9_18-43-47.eeg",
+     "sha256": "7aa7b4a5c2c90ca502e6fb90373b0518b0afb782080fd06b26de5e77e6321b1f",
+     "size_bytes": 792239616
+    }
+   ]
+  }
+ ]
+}

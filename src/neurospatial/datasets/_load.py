@@ -132,7 +132,7 @@ def load(
     source = _stream_url(entry) if streamed else fetch_session(entry, cache=cache)
     rec: Recording = module.load_session(entry, source)
     return run_checks(
-        rec, stated=entry.info.stated, accept_failed_checks=accept_failed_checks
+        rec, stated=entry.stated, accept_failed_checks=accept_failed_checks
     )
 
 
@@ -264,13 +264,13 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
     :class:`DownloadWarning` giving its size, URL and cache directory,
     attributed to the caller of :func:`load` or :func:`fetch_all`.
     """
-    from neurospatial.datasets._fetch import cache_root, fetch, fetch_zip_member
+    from neurospatial.datasets._fetch import cache_root, fetch, fetch_members
 
     root = cache_root(cache)
     if not _cached(root, entry):
         warnings.warn(
             f"Downloading {entry.info.dataset} session {entry.session}: "
-            f"{_size(entry.download_bytes)} from "
+            f"{_size(_missing_bytes(root, entry))} from "
             f"{entry.url if entry.members else entry.download_url} into "
             f"{root / entry.info.dataset}",
             DownloadWarning,
@@ -279,14 +279,14 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
     if entry.members:
         assert entry.url is not None  # checked when the registry is read
         subdir = f"{entry.info.dataset}/{entry.session}"
+        archived = fetch_members(
+            entry.url,
+            {m.path: m.sha256 for m in entry.members if m.url is None},
+            subdir=subdir,
+            cache=cache,
+        )
         paths = [
-            fetch_zip_member(
-                entry.url,
-                member.path,
-                sha256=member.sha256,
-                subdir=subdir,
-                cache=cache,
-            )
+            archived[member.path]
             if member.url is None
             else fetch(
                 member.url,
@@ -305,6 +305,25 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
         subdir=entry.info.dataset,
         cache=cache,
     )
+
+
+def _missing_bytes(root: Path, entry: SessionEntry) -> int:
+    """The bytes fetching the session's files not yet in the cache downloads.
+
+    A missing member of a CRCNS ``.tar.gz`` costs the archive, which is read
+    from its start; members already cached cost nothing.
+    """
+    from neurospatial.datasets._fetch import crcns_path
+
+    if not entry.members:
+        return entry.size_bytes
+    folder = root / entry.info.dataset / entry.session
+    missing = [m for m in entry.members if not (folder / Path(m.path).name).exists()]
+    own = sum(m.size_bytes for m in missing if m.url)
+    archived = [m for m in missing if m.url is None]
+    if archived and entry.url is not None and crcns_path(entry.url) is not None:
+        return own + entry.size_bytes
+    return own + sum(m.size_bytes for m in archived)
 
 
 def _stream_url(entry: SessionEntry) -> str:

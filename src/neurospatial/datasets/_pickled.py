@@ -29,6 +29,7 @@ import numpy as np
 __all__ = [
     "DillUnpickler",
     "InertObject",
+    "InertStandIn",
     "SpikeUnpickler",
     "inert_fields",
     "pickle_imports",
@@ -287,6 +288,30 @@ class InertObject:
         return f"<inert {self.qualified_name}>"
 
 
+class InertStandIn(InertObject):
+    """A function, type, container or module namespace named in a pickle, inert.
+
+    ``dill`` pickles a function as a call to ``_create_function`` with a code
+    object it builds by calling ``_load_type("CodeType")``, and refers to the
+    function's module through ``<module>.__dict__``; a ``deque`` is rebuilt by
+    appending to it. A stand-in accepts each of these steps and records what
+    it was given (``args``, ``items``), so the objects around it can be read,
+    and runs nothing: calling one returns another stand-in.
+    """
+
+    def __call__(self, *args: Any) -> InertStandIn:
+        """Another stand-in holding ``args``; nothing is called."""
+        return type(self)(*args)
+
+    def append(self, item: Any) -> None:
+        """Keep ``item`` in ``items``."""
+        self.__dict__.setdefault("items", []).append(item)
+
+    def extend(self, items: Any) -> None:
+        """Keep ``items`` in ``items``."""
+        self.__dict__.setdefault("items", []).extend(items)
+
+
 def inert_fields(obj: Any) -> dict[str, Any]:
     """The attributes an :class:`InertObject`'s pickled state set, as one dict.
 
@@ -331,6 +356,11 @@ class DillUnpickler(pickle.Unpickler):
         The pickle stream.
     classes : collection of str
         ``"module.name"`` of each class to rebuild inertly.
+    stand_ins : collection of str, default ()
+        ``"module.name"`` of each function, type, container or module
+        namespace (``"<module>.__dict__"``) to resolve to an
+        :class:`InertStandIn`: for pickles of objects that hold ``dill``-pickled
+        functions or deques, whose parts cannot otherwise be read.
     """
 
     ALLOWED: ClassVar[dict[tuple[str, str], Any]] = {
@@ -340,9 +370,10 @@ class DillUnpickler(pickle.Unpickler):
         ("dill.dill", "_get_attr"): _get_attr,
     }
 
-    def __init__(self, file: Any, classes: Any) -> None:
+    def __init__(self, file: Any, classes: Any, stand_ins: Any = ()) -> None:
         super().__init__(file, encoding="latin1")
         self._classes = frozenset(classes)
+        self._stand_ins = frozenset(stand_ins)
         self._inert: dict[str, type[InertObject]] = {}
 
     def find_class(self, module: str, name: str) -> Any:
@@ -350,17 +381,19 @@ class DillUnpickler(pickle.Unpickler):
         if (module, name) in self.ALLOWED:
             return self.ALLOWED[module, name]
         qualified = f"{module}.{name}"
-        if qualified not in self._classes:
+        if qualified in self._stand_ins:
+            base: type[InertObject] = InertStandIn
+        elif qualified in self._classes:
+            base = InertObject
+        else:
             msg = f"refusing to load {qualified} from a pickled file"
             raise pickle.UnpicklingError(msg)
         if qualified not in self._inert:
-            self._inert[qualified] = type(
-                name, (InertObject,), {"qualified_name": qualified}
-            )
+            self._inert[qualified] = type(name, (base,), {"qualified_name": qualified})
         return self._inert[qualified]
 
 
-def read_dill_pickle(path: Path, classes: Any) -> Any:
+def read_dill_pickle(path: Path, classes: Any, stand_ins: Any = ()) -> Any:
     """Read a (gzipped) ``dill`` pickle without running any code it names.
 
     Its imports are listed first from its opcodes (:func:`pickle_imports`)
@@ -374,6 +407,9 @@ def read_dill_pickle(path: Path, classes: Any) -> Any:
     classes : collection of str
         ``"module.name"`` of each class the file may hold, rebuilt as
         :class:`InertObject`.
+    stand_ins : collection of str, default ()
+        ``"module.name"`` of each function, type, container or module
+        namespace the file may name, resolved to an :class:`InertStandIn`.
 
     Returns
     -------
@@ -396,8 +432,10 @@ def read_dill_pickle(path: Path, classes: Any) -> Any:
             blob = stream.read()
     else:
         blob = path.read_bytes()
-    allowed = {".".join(key) for key in DillUnpickler.ALLOWED} | set(classes)
+    allowed = (
+        {".".join(key) for key in DillUnpickler.ALLOWED} | set(classes) | set(stand_ins)
+    )
     if unexpected := pickle_imports(blob) - allowed:
         msg = f"refusing {path.name}: its pickle imports {sorted(unexpected)}"
         raise pickle.UnpicklingError(msg)
-    return DillUnpickler(io.BytesIO(blob), classes).load()
+    return DillUnpickler(io.BytesIO(blob), classes, stand_ins).load()

@@ -224,6 +224,7 @@ def no_download(monkeypatch):
 
     monkeypatch.setattr(_fetch, "fetch", refuse)
     monkeypatch.setattr(_fetch, "fetch_zip_member", refuse)
+    monkeypatch.setattr(_fetch, "fetch_crcns_tar_members", refuse)
 
 
 @pytest.fixture

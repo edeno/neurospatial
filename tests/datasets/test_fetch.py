@@ -874,3 +874,49 @@ def test_crcns_tar_members_extracts_only_the_pinned_members(
         _fetch.fetch_crcns_tar_members(
             "hc-3/top/s.tar.gz", {"s/absent": "0" * 64}, subdir="crcns", cache=tmp_path
         )
+
+
+def test_crcns_url_names_the_portal_file():
+    url = _fetch.crcns_url("hc-3/top/s.tar.gz")
+    assert url.startswith(_fetch.CRCNS_PORTAL)
+    assert _fetch.crcns_path(url) == "hc-3/top/s.tar.gz"
+    assert _fetch.crcns_path("https://example.org/s.tar.gz") is None
+
+
+def test_fetch_members_reads_a_crcns_archive_once_for_every_member(portal, tmp_path):
+    members = {"s/s.res.1": b"20\n", "s/s.clu.1": b"3\n2\n", "s/s.eeg": b"\0" * 64}
+    portal.reply = _PortalResponse(_tar_gz(members), "application/octet-stream")
+    pins = {
+        name: hashlib.sha256(members[name]).hexdigest()
+        for name in ("s/s.res.1", "s/s.clu.1")
+    }
+    paths = _fetch.fetch_members(
+        _fetch.crcns_url("hc-3/top/s.tar.gz"), pins, subdir="crcns", cache=tmp_path
+    )
+    assert {name: path.read_bytes() for name, path in paths.items()} == {
+        name: members[name] for name in pins
+    }
+    assert len(portal.forms) == 1  # one stream for both members
+    assert portal.forms[0]["fn"] == ["hc-3/top/s.tar.gz"]
+
+
+def test_fetch_of_a_crcns_url_logs_in(portal, tmp_path):
+    payload = b"metadata tables"
+    portal.reply = _PortalResponse(payload, "application/zip")
+    path = fetch(
+        _fetch.crcns_url("hc-3/docs/tables.zip"),
+        "tables.zip",
+        sha256=hashlib.sha256(payload).hexdigest(),
+        subdir="crcns",
+        cache=tmp_path,
+    )
+    assert path.read_bytes() == payload
+    assert portal.forms[0]["fn"] == ["hc-3/docs/tables.zip"]
+    with pytest.raises(ValueError, match="cached under its own name"):
+        fetch(
+            _fetch.crcns_url("hc-3/docs/tables.zip"),
+            "other.zip",
+            sha256="0" * 64,
+            subdir="crcns",
+            cache=tmp_path,
+        )

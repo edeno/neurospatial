@@ -459,3 +459,34 @@ def test_importing_a_reader_keeps_the_pandas_settings(tmp_path, monkeypatch):
 
     assert pd.get_option("future.infer_string") == before
     sys.modules.pop("flips_a_pandas_option", None)
+
+
+def test_download_warning_counts_a_crcns_archive_only_for_a_missing_member(tmp_path):
+    """A .tar.gz is streamed from its start: one missing member costs the archive."""
+    from neurospatial.datasets._fetch import crcns_url
+
+    registry = json.loads(
+        (Path(_load.__file__).parent / "registry" / "forli_2025.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    row = registry["sessions"][0]
+    row.pop("asset_id", None)
+    row.update(url=crcns_url("hc-3/top/s.tar.gz"), size_bytes=1000)
+    row["members"] = [
+        {"path": "top/s/s.res.1", "sha256": "a" * 64, "size_bytes": 10},
+        {
+            "path": "t.zip",
+            "sha256": "b" * 64,
+            "size_bytes": 7,
+            "url": "https://x/t.zip",
+        },
+    ]
+    entry = _read(registry, "forli_2025.json")[0]
+    folder = tmp_path / entry.info.dataset / entry.session
+    assert _load._missing_bytes(tmp_path, entry) == 1007
+    folder.mkdir(parents=True)
+    (folder / "s.res.1").write_bytes(b"0" * 10)
+    assert _load._missing_bytes(tmp_path, entry) == 7
+    (folder / "t.zip").write_bytes(b"0" * 7)
+    assert _load._missing_bytes(tmp_path, entry) == 0

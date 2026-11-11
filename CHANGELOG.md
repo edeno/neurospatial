@@ -86,6 +86,36 @@
   each file a session row names in the record, checks the cached copy's MD5
   against the record's and pins its SHA-256.
 
+### Datasets: Diba & Buzsáki (2007), Diba's rats in CRCNS hc-3
+
+- `diba_2007`: the 27 CRCNS hc-3 sessions of Kamran Diba's three rats
+  (`gor01`, `pin01`, `vvp01`), dorsal CA1 and CA3 on linear tracks, a T-maze,
+  an open field, a wheel and sleep: hc-3's sorted units with its cell-type and
+  region labels, and the LFP of every site on request. Six sessions are tied
+  to the paper by inference (Maboudi et al. 2018's 18 sessions "previously
+  used by [Diba and Buzsáki, 2007]"); each registry row says whether, and why.
+  hc-3 holds no position for any of them; the default,
+  `2006-6-7_16-40-19`, takes its 2-D positions from Maboudi et al.'s sample
+  file, whose spikes match hc-3's to 1 µs (95.3%). The other 26 load with
+  `rec.times` on the LFP's sample clock and no positions.
+- Registries can name sessions read from members of a CRCNS `.tar.gz`
+  (`_fetch.crcns_url`): one stream of the archive fetches every member
+  needed, the LFP member likewise on request, and the download warning gives
+  the archive's size only when a member is missing. A row can state its own
+  checked facts (`stated`), for a session tracked by other means than the
+  rest of its dataset.
+- Readers for NeuroSuite `.xml`, `.res`/`.clu`, `.eeg` and `.whl` files, and
+  inert stand-ins for the functions, types and deques a `dill` pickle holds,
+  so nelpy objects with HMMs and tuning curves can be read without running
+  them.
+- Worked result, not met: on the one session with positions, `ripple_detection`'s
+  `diba_2007` events judged with `DIBA_BUZSAKI_2007` put 40 of 45 significant
+  reverse events after the run (88.9%, paper 85%) but 18 of 29 forward events
+  before it (62.1%, paper 95%, p = 0.13 against one half). With hc-3's units
+  the significant events are no more than chance; Diba's own sorting of the
+  same session gives 22.6% significant, 82.5% reverse after and 57.4% forward
+  before.
+
 ### Datasets: Shin et al. (2019), W-maze learning with CA1 and prefrontal cortex
 
 - `shin_2019`: DANDI 000978 (CC-BY-4.0), rats learning a W-maze alternation
