@@ -89,7 +89,7 @@ class TestLogPoissonLikelihood:
         spike_counts = np.array([[1]], dtype=np.int64)
         encoding_models = np.array([[0.0]], dtype=np.float64)
 
-        # With default min_rate (1e-10)
+        # With the default min_rate (the smallest normal double)
         ll_default = log_poisson_likelihood(spike_counts, encoding_models, dt=0.025)
 
         # With larger min_rate (1e-5)
@@ -99,6 +99,18 @@ class TestLogPoissonLikelihood:
 
         # Larger min_rate should give higher (less negative) log-likelihood
         assert ll_larger[0, 0] > ll_default[0, 0]
+
+    def test_small_positive_rates_are_decoded_as_given(self) -> None:
+        """Rates far below 1 Hz keep their ratios: the floor touches zeros only.
+
+        One spike from a cell whose rate is 1e-20 Hz in one bin and 1e-40 Hz
+        in the other favours the first by exactly the rate ratio, as the
+        Poisson likelihood ``n log(rate dt) - rate dt`` gives.
+        """
+        spike_counts = np.array([[1]], dtype=np.int64)
+        encoding_models = np.array([[1e-20, 1e-40]], dtype=np.float64)
+        ll = log_poisson_likelihood(spike_counts, encoding_models, dt=0.025)
+        assert ll[0, 0] - ll[0, 1] == pytest.approx(20 * np.log(10), rel=1e-12)
 
     def test_zero_spikes_all_bins(self) -> None:
         """With zero spikes, log-likelihood should be valid (rate-only term)."""
@@ -342,7 +354,7 @@ class TestSparseCounts:
                 for i in range(0, 400, 10)
             ]
         )
-        expected = np.maximum(rates, 1e-10) * dt
+        expected = np.maximum(rates, np.finfo(np.float64).tiny) * dt
         reference = poisson.logpmf(counts[:, :, None], expected[None]).sum(axis=1)
         reference += gammaln(counts + 1).sum(axis=1)[:, None]
         assert_allclose(sparse_ll, dense_ll, rtol=0, atol=1e-12)

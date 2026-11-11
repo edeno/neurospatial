@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Decoding: rate maps are decoded as given
+
+- `decode_position`, `BayesianDecoder`, the replay nulls and
+  `log_poisson_likelihood` no longer raise rates below 1e-10 Hz to 1e-10 Hz.
+  The floor is now the smallest normal number of the rates' dtype (about
+  2.2e-308 Hz for float64, 1.2e-38 Hz for float32), so it only keeps a zero
+  rate from taking `log(0)`. The old floor gave every bin below 1e-10 Hz the
+  same rate, which threw away the tails of smoothed fields, where rates still
+  rank positions by distance from the field. On Carey et al.'s (2019) tuning
+  curves, 39% of cell-bin rates were below it, and it changed the decoded
+  position in 8% of time bins on R050-2014-03-29.
+  A spike from a neuron whose rate is zero in a bin still rules that bin out
+  in practice. Decoded positions change wherever rate maps go below 1e-10 Hz.
+  `min_rate=1e-10` restores the old floor in `log_poisson_likelihood`.
+
 ### Datasets: `olafsdottir_2016` gives awake replay at the corners (Ólafsdóttir et al. 2017)
 
 - `rec.epochs["corner_stops"]`, `["engaged"]` and `["disengaged"]`: each stay

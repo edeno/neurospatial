@@ -37,13 +37,17 @@ from scipy import sparse
 from neurospatial._exceptions import InputError, _format_error
 from neurospatial.decoding._time_bins import validate_dt
 
+# Smallest normal double: replaces only rates of exactly 0 (or subnormal), so
+# log(0) is never taken and every representable rate is decoded as given.
+_MIN_RATE = float(np.finfo(np.float64).tiny)
+
 
 def log_poisson_likelihood(
     spike_counts: NDArray[np.int64],
     encoding_models: NDArray[np.float64],
     *,
     dt: float,
-    min_rate: float = 1e-10,
+    min_rate: float = _MIN_RATE,
 ) -> NDArray[np.float64]:
     """Compute the Poisson log-likelihood of spike counts at every bin.
 
@@ -67,9 +71,14 @@ def log_poisson_likelihood(
         rates below ``min_rate`` are raised to ``min_rate``.
     dt : float
         Time bin width in seconds.
-    min_rate : float, default=1e-10
-        Rate floor in Hz, so a zero rate gives a large finite penalty instead
-        of ``log(0)``.
+    min_rate : float, default=np.finfo(np.float64).tiny
+        Rate floor in Hz. The default, about 2.2e-308, is a numerical guard
+        only: it replaces exact zeros so ``log(0)`` is never taken, and leaves
+        every other rate as given. Float32 rates are floored at float32's
+        smallest normal number, about 1.2e-38, when that is larger. A spike from a neuron whose rate is zero in
+        a bin then makes that bin about ``exp(-700)`` times less likely, which
+        rules it out in practice. A larger floor is a model of background
+        firing and changes the decoded position wherever rates fall below it.
 
     Returns
     -------
@@ -165,10 +174,18 @@ class _PoissonRates:
 
     @classmethod
     def from_rates(
-        cls, encoding_models: NDArray[np.float64], dt: float, *, min_rate: float = 1e-10
+        cls,
+        encoding_models: NDArray[np.float64],
+        dt: float,
+        *,
+        min_rate: float = _MIN_RATE,
     ) -> _PoissonRates:
         """Build from finite, non-negative ``(n_neurons, n_bins)`` rates in Hz."""
-        expected_counts = np.maximum(encoding_models, min_rate) * dt
+        # A float32 map would round a float64 floor to 0; floor at its own
+        # dtype's smallest normal number instead.
+        dtype = np.result_type(encoding_models, np.float32)
+        floor = max(min_rate, float(np.finfo(dtype).tiny))
+        expected_counts = np.maximum(encoding_models, floor) * dt
         return cls(np.log(expected_counts), expected_counts.sum(axis=0))
 
     def log_likelihood(

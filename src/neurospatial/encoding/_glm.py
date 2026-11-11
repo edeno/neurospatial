@@ -36,7 +36,7 @@ from neurospatial.ops.diffusion import MRFBasis
 # only ``penalty`` / ``rank``. The default basis rank (``_DEFAULT_MAX_RANK``)
 # lives with the basis resolver in ``ops.diffusion``, NOT here.
 # ---------------------------------------------------------------------------
-_RATE_FLOOR = 1e-10  # matches the decoding min_rate (likelihood.py:47)
+_RATE_FLOOR = 1e-10  # Hz; lower bound on fitted rates (silent units sit here)
 _MAX_ITER = 100  # Newton iterations
 _FIT_TOL = 1e-10  # float64 relative penalized-objective decrease
 _FIT_TOL_FLOOR = 1e-6  # float32 floor: max(tol, this) -- float32 JAX path only

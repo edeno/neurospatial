@@ -447,8 +447,10 @@ def decode_position(
         mixes bins measured by length and by area has no uniform-over-space
         prior and raises ``ValueError``.
 
-        Rates are floored at 1e-10 Hz, so a spike from a neuron whose rate is
-        zero in a bin makes that bin very unlikely, not impossible.
+        Rates are decoded as given. Only exact zeros are raised, to the
+        smallest normal double (about 2.2e-308 Hz), so a spike from a neuron
+        whose rate is zero in a bin rules that bin out in practice without
+        taking ``log(0)``.
     method : {"poisson"}, default="poisson"
         Likelihood model. Only the Poisson model is available.
     times : NDArray[np.float64] | None, default=None
