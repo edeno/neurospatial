@@ -25,7 +25,7 @@ in Figure S1Fii.
 Each file is 28 to 47 GB, and about half of it is ``acquisition/ElectricalSeries``,
 which holds the same samples as the LFP. The files are never downloaded: a
 load reads units, position, epochs and trials by byte range (47 MB in 20 s for JS14), and
-``rec.lfp.fetch(channels)`` reads the LFP the same way.
+``rec.lfp.fetch(channels, stream=True)`` reads the LFP the same way.
 
 Sources read: DANDI 000978's metadata, the files, and Shin et al. 2019 with its
 Supplemental Information (Neuron 104:1110).
@@ -474,7 +474,7 @@ _RAW = (
     "The file is mostly voltage: acquisition/ElectricalSeries holds the same "
     "samples, on the same clock, as processing/ecephys/LFP (equal wherever "
     "compared), and the two are each about half the file. Never download it "
-    "for the spikes: load() reads them by byte range. rec.lfp.fetch(channels) "
+    "for the spikes: load() reads them by byte range. rec.lfp.fetch(channels, stream=True) "
     "reads the LFP's rows, about 14 to 24 GB whatever the channels, since the "
     "file stores each sample's channels together; ask for all the channels you "
     "need at once."
