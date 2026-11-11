@@ -39,10 +39,20 @@ class Event:
     stop: float
     end: str  # "low" or "high": the platform it lies on
     template: str  # the direction it was assigned to
-    rho: float
+    rho: float  # against field positions along the track (increasing)
     p_value: float
     significant: bool
     n_active: int
+
+    @property
+    def run_order_rho(self) -> float:
+        """The correlation with the run's firing order, the paper's template.
+
+        ``rho`` correlates first-spike times with field positions along the
+        track; a run of decreasing position fires its cells in decreasing
+        position, so its template's order is the reverse.
+        """
+        return self.rho if self.template == "increasing" else -self.rho
 
     @property
     def before_run(self) -> bool:
@@ -77,7 +87,7 @@ def segment_inputs(rec, segment):
         result = compute_spatial_rates(
             rec.env, trains, rec.times, rec.positions, epochs=laps
         )
-        rates[direction] = np.asarray(result.firing_rate, dtype=np.float64)
+        rates[direction] = np.asarray(result.firing_rates, dtype=np.float64)
         place[direction] = np.nanmax(rates[direction], axis=1) >= MIN_PEAK_RATE
     inside = (rec.times >= rows[0, 0]) & (rec.times <= rows[0, 1])
     times = rec.times[inside]
@@ -202,8 +212,8 @@ def run(rec, segments=("long_track", "short_track")):
 
 def shares(events):
     """Forward-before and reverse-after counts and shares of the significant events."""
-    forward = [e for e in events if e.significant and e.rho > 0]
-    reverse = [e for e in events if e.significant and e.rho < 0]
+    forward = [e for e in events if e.significant and e.run_order_rho > 0]
+    reverse = [e for e in events if e.significant and e.run_order_rho < 0]
     before = sum(e.before_run for e in forward)
     after = sum(not e.before_run for e in reverse)
     return {
