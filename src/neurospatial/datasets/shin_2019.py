@@ -72,7 +72,9 @@ Analysis choices (``params``):
 
 from __future__ import annotations
 
+import http.client
 import os
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
@@ -152,6 +154,8 @@ _TOLERANCE_QUANTILE = 0.99
 #: Rows read per byte-range request of the LFP, and requests at once.
 _LFP_BLOCK_BYTES = 32 << 20
 _LFP_WORKERS = 4
+#: Tries of each byte range: a connection reset is retried after 1, 2, 4 ... s.
+_LFP_ATTEMPTS = 6
 
 _POSITION = "processing/behavior/Position/SpatialSeries"
 _LFP = ("ecephys", "LFP", "ElectricalSeries")
@@ -236,7 +240,7 @@ def load_session(
         position = read_position(nwb, position_name=_POSITION, columns=[0, 1])
         velocity = np.asarray(series.data[:, 2], dtype=np.float64)
         units = read_units(nwb)
-        unit_tetrodes = np.asarray(nwb.units["electrodes"].data[:], dtype=int)
+        unit_tetrodes = np.asarray(nwb.units.electrodes.data[:], dtype=int)
         electrodes = nwb.electrodes.to_dataframe()[["group_name", "label", "location"]]
         epoch_rows = (
             read_intervals(nwb, interval_name="epoch intervals")
@@ -250,6 +254,13 @@ def load_session(
         lfp_unit = str(lfp.unit)
         subject = str(nwb.subject.subject_id)
         started = nwb.session_start_time
+    if unit_tetrodes.shape != (len(units.spike_times),):
+        msg = (
+            f"{entry.session}: the units table's electrodes column holds "
+            f"{unit_tetrodes.shape} values for {len(units.spike_times)} units, not "
+            "one tetrode per unit"
+        )
+        raise ValueError(msg)
     if "row1:xpos row2:ypos row3:velocity" not in comments:
         msg = (
             f"{entry.session}: the position series' comments are {comments!r}, "
@@ -963,16 +974,25 @@ def _ranged_rows(
 
     def read(block: tuple[int, int]) -> None:
         start, end = block
+        size = (end - start) * row_bytes
         low = offset + start * row_bytes
         request = urllib.request.Request(
-            url, headers={"Range": f"bytes={low}-{low + (end - start) * row_bytes - 1}"}
+            url, headers={"Range": f"bytes={low}-{low + size - 1}"}
         )
-        with urllib.request.urlopen(request, timeout=300) as response:
-            raw = response.read()
-        if len(raw) != (end - start) * row_bytes:
+        for attempt in range(_LFP_ATTEMPTS):
+            try:
+                with urllib.request.urlopen(request, timeout=300) as response:
+                    raw = response.read()
+                if len(raw) == size:
+                    break
+                failure: str = f"returned {len(raw)} bytes, not {size}"
+            except (OSError, http.client.HTTPException) as error:
+                failure = f"failed: {type(error).__name__}: {error}"
+            time.sleep(2.0**attempt)
+        else:
             msg = (
-                f"byte range of rows {start} to {end} returned {len(raw)} bytes, "
-                f"not {(end - start) * row_bytes}"
+                f"byte range of LFP rows {start} to {end} {failure}, "
+                f"{_LFP_ATTEMPTS} times"
             )
             raise OSError(msg)
         rows = np.frombuffer(raw, dtype="<f8").reshape(end - start, n_columns)
