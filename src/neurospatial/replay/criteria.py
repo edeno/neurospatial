@@ -542,11 +542,17 @@ def _trajectory_metrics(
     spike_counts: NDArray[np.int64] | None,
     metric: Literal["geodesic", "euclidean"] | None,
     operation: str,
+    given: NDArray[np.float64] | None = None,
 ) -> tuple[TrajectoryMetrics, tuple[NDArray[np.float64], NDArray[np.intp]]]:
     """:func:`trajectory_metrics`, naming ``operation`` in its errors.
 
     Also returns the :func:`_bin_distance_lookup` of the MAP bins, so a
     caller measuring further distances between them reuses it.
+
+    ``given``, for ``posterior`` a template's share of a joint decode, is
+    the posterior given the template, ``(n_time_bins, n_bins)``: positions
+    are read from it, and peak probabilities from the share. A share row
+    may then have no mass, where the template's probability underflowed.
     """
     from neurospatial.decoding import map_bin, mean_position
     from neurospatial.environment import _track_extents
@@ -570,7 +576,13 @@ def _trajectory_metrics(
                 fix="pass the posterior decoded on this environment",
             )
         )
-    raw = _probability_rows(raw, operation, sums="at_most_one")
+    if given is None:
+        raw = _probability_rows(raw, operation, sums="at_most_one")
+        posterior = raw / raw.sum(axis=1, keepdims=True)
+    else:
+        raw = _probability_rows(raw, operation, sums="at_most_one_or_zero")
+        posterior = _probability_rows(given, operation, sums="one")
+        assert posterior.shape == raw.shape
     times = _posterior_times(times, len(raw), operation, why=_STEP_WHY, increasing=True)
     empty_time_bins = (
         None
@@ -581,7 +593,6 @@ def _trajectory_metrics(
     if metric is None:
         metric = "euclidean" if extents is None else "geodesic"
 
-    posterior = raw / raw.sum(axis=1, keepdims=True)
     bins = map_bin(env, posterior)
     rows = np.arange(len(raw))
     centers = np.asarray(env.bin_centers, dtype=np.float64)

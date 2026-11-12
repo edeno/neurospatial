@@ -14,10 +14,12 @@ from neurospatial.replay import (
     compare_replay_methods,
     detect_replay,
     fit_linear_trajectory,
+    trajectory_metrics,
 )
 from neurospatial.replay.methods import (
     OLAFSDOTTIR_2017,
     PFEIFFER_FOSTER_2013,
+    TIROLE_2022,
     WU_2017,
     ReplayCriterion,
 )
@@ -191,6 +193,31 @@ class TestVanishingTemplate:
             env, joint.conditional["in"].posterior, times, replay_method=method
         )
         assert share.score == pytest.approx(alone.score)
+
+    def test_trajectory_quantities_read_positions_given_the_template(
+        self, joint_with_a_vanishing_template
+    ):
+        env, maps, counts, times, joint = joint_with_a_vanishing_template
+        method = dataclasses.replace(
+            TIROLE_2022,
+            n_shuffles=30,
+            criteria=(ReplayCriterion("map_path_length", ">", 0.0),),
+        )
+        result = detect_replay(
+            env,
+            joint,
+            times,
+            replay_method=method,
+            spike_counts=counts,
+            encoding_models=maps,
+            dt=DT,
+            template="in",
+            rng=0,
+        )
+        expected = trajectory_metrics(env, joint.conditional["in"].posterior, times)
+        assert result.values["map_path_length > 0"] == pytest.approx(
+            expected.map_path_length
+        )
 
 
 def test_a_sampled_score_without_shuffles_follows_the_seed(track, monkeypatch):

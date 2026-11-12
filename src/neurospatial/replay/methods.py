@@ -2245,6 +2245,7 @@ class _Measured:
     counts: NDArray[np.int64] | None
     values: dict[str, float]
     quantity_test: _QuantityTest | None
+    given: NDArray[np.float64] | None = None
 
 
 def _measure_event(
@@ -2394,7 +2395,18 @@ def _measure_event(
         counts=counts,
         values=values,
         quantity_test=quantity_test,
+        given=_tested_given(event, template, rows),
     )
+
+
+def _tested_given(
+    event: _Event, template: str | None, rows: NDArray[np.intp]
+) -> NDArray[np.float64] | None:
+    """The tested rows given their template, when they are a joint decode's share."""
+    if template != event.template:  # chosen among templates decoded separately
+        return None
+    given = _given_rows(event)
+    return None if given is None else given[rows]
 
 
 class _TestedScore(NamedTuple):
@@ -2515,7 +2527,7 @@ def _event_quantities(names: Sequence[str], measured: _Measured) -> dict[str, fl
     the tested segment's values, and :class:`TrajectoryMetrics` scalars of
     the tested rows, computed only when one is named.
     """
-    from neurospatial.replay.criteria import trajectory_metrics
+    from neurospatial.replay.criteria import _trajectory_metrics
 
     metrics = None
     values: dict[str, float] = {}
@@ -2536,11 +2548,14 @@ def _event_quantities(names: Sequence[str], measured: _Measured) -> dict[str, fl
             )
         else:
             if metrics is None:
-                metrics = trajectory_metrics(
+                metrics, _ = _trajectory_metrics(
                     measured.track_env,
                     measured.posterior,
                     measured.times,
                     spike_counts=measured.counts,
+                    metric=None,
+                    operation="trajectory_metrics()",
+                    given=measured.given,
                 )
             value = float(getattr(metrics, name))
         values[name] = value
@@ -2620,10 +2635,17 @@ def _given_template(event: _Event, rows: NDArray[np.intp]) -> NDArray[np.float64
     template's probability underflows to 0 still has a probability mass,
     which dividing the share by its row sums could not recover.
     """
-    assert event.joint is not None
-    assert event.template is not None
+    given = _given_rows(event)
+    assert given is not None
+    return given[rows]
+
+
+def _given_rows(event: _Event) -> NDArray[np.float64] | None:
+    """Every row of the event given its template, if it tests a joint decode's share."""
+    if event.joint is None or event.template is None:
+        return None
     conditional = event.joint.conditional[event.template].posterior
-    return np.asarray(conditional, dtype=np.float64)[rows]
+    return np.asarray(conditional, dtype=np.float64)
 
 
 def _conditions_share(

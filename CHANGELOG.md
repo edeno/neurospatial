@@ -27,6 +27,12 @@
   need rows summing to 1, such as `fit_linear_trajectory`, refused the event.
   Shuffles that decode again are scored the same way. `replay_significance`
   given a share and no null that decodes again still divides it.
+- A criterion on a trajectory quantity (`n_time_bins`, `map_path_length`, ...)
+  of a joint decode's share reads positions from the same conditional
+  posterior, and peak probabilities from the share. A time bin where the
+  template's probability underflowed to 0 no longer makes it refuse the event
+  (Tirole et al. 2022's tracks). Segmenting a share with such a time bin is
+  still refused.
 
 ### Datasets: `olafsdottir_2016` gives awake replay at the corners (Ólafsdóttir et al. 2017)
 

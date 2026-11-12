@@ -261,7 +261,7 @@ def _probability_rows(
     posterior: Any,
     operation: str,
     *,
-    sums: Literal["one", "one_or_zero", "at_most_one"],
+    sums: Literal["one", "one_or_zero", "at_most_one", "at_most_one_or_zero"],
 ) -> NDArray[np.float64]:
     """Refuse rows that are not a probability mass over the bins.
 
@@ -271,10 +271,12 @@ def _probability_rows(
         Posterior mass per bin.
     operation : str
         The calling function, for the refusal message.
-    sums : {"one", "one_or_zero", "at_most_one"}
+    sums : {"one", "one_or_zero", "at_most_one", "at_most_one_or_zero"}
         The row-sum rule: 1; 1 or exactly 0 (the time bins without spikes
-        that ``empty_time_bins="zero"`` zeroes); or in (0, 1], for a
-        template's share of a joint decode. Sums are compared with 1 within
+        that ``empty_time_bins="zero"`` zeroes); in (0, 1], for a
+        template's share of a joint decode; or in [0, 1], for a share read
+        beside its exact conditional posterior, where a time bin in which
+        the template's probability underflowed to 0 has no mass. Sums are compared with 1 within
         the tolerance a ``DecodingResult`` accepts (``1e-6``, which covers
         float32 rounding).
 
@@ -296,8 +298,8 @@ def _probability_rows(
     checked = finite & ~negative
     row_sums = values.sum(axis=1)
     problems = []
-    if sums == "at_most_one":
-        empty = checked & (row_sums <= 0)
+    if sums in ("at_most_one", "at_most_one_or_zero"):
+        empty = checked & (row_sums <= 0) & (sums == "at_most_one")
         excess = checked & (row_sums > 1.0 + _ROW_SUM_TOLERANCE)
         bad = ~finite | negative | empty | excess
     else:
