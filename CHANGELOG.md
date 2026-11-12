@@ -33,6 +33,11 @@
   template's probability underflowed to 0 no longer makes it refuse the event
   (Tirole et al. 2022's tracks). Segmenting a share with such a time bin is
   still refused.
+- A template whose share has no mass in any time bin, as when its
+  probability underflows to 0 throughout, has no weighted correlation: the
+  event gets no verdict and such a shuffle is left out, as one whose decoded
+  position does not vary. `weighted_correlation` itself still refuses a
+  posterior with no mass.
 
 ### Datasets: `olafsdottir_2016` gives awake replay at the corners (Ólafsdóttir et al. 2017)
 

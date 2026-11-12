@@ -2272,12 +2272,16 @@ class _WeightedCorrelationScorer(_Scorer):
         self.positions = _track_bin_centers(env, _OPERATION)
         self.posterior = np.asarray(posterior, dtype=np.float64)
         self.row_normalization = row_normalization
-        self.weights = _validated_weights(self.posterior, env.n_bins, row_normalization)
+        self.weights = _weights_with_mass(self.posterior, env.n_bins, row_normalization)
         self.times = _posterior_times(
-            times, len(self.weights), _OPERATION, why=_CORRELATION_WHY
+            times, len(self.posterior), _OPERATION, why=_CORRELATION_WHY
         )
 
     def observe(self) -> WeightedCorrelationResult:
+        if self.weights is None:
+            return WeightedCorrelationResult(
+                score=np.nan, row_normalization=self.row_normalization
+            )
         score = _weighted_correlations(self.weights[None], self.times, self.positions)
         return WeightedCorrelationResult(
             score=float(score[0]), row_normalization=self.row_normalization
@@ -2289,12 +2293,16 @@ class _WeightedCorrelationScorer(_Scorer):
         out = np.empty(n_shuffles)
         batch: list[NDArray[np.float64]] = []
         filled = 0
-        for shuffled in posteriors:
-            batch.append(
-                _validated_weights(
-                    shuffled, len(self.positions), self.row_normalization
-                )
+        undefined = []
+        for index, shuffled in enumerate(posteriors):
+            weights = _weights_with_mass(
+                shuffled, len(self.positions), self.row_normalization
             )
+            if weights is None:
+                # Scored as any weights would be, then set undefined.
+                undefined.append(index)
+                weights = np.ones_like(np.asarray(shuffled, dtype=np.float64))
+            batch.append(weights)
             if len(batch) == self._BATCH:
                 out[filled : filled + len(batch)] = _weighted_correlations(
                     np.stack(batch), self.times, self.positions
@@ -2305,7 +2313,29 @@ class _WeightedCorrelationScorer(_Scorer):
             out[filled : filled + len(batch)] = _weighted_correlations(
                 np.stack(batch), self.times, self.positions
             )
+        out[undefined] = np.nan
         return out
+
+
+def _weights_with_mass(
+    posterior: Any, n_bins: int, row_normalization: str
+) -> NDArray[np.float64] | None:
+    """The checked weights, or None for a posterior with no mass at all.
+
+    A template's share of a joint decode has no mass when the template's
+    probability underflows to 0 in every time bin; its correlation is then
+    undefined, as when time or position does not vary under the weights.
+    """
+    weights = np.asarray(posterior, dtype=np.float64)
+    if (
+        weights.ndim == 2
+        and weights.shape[1] == n_bins
+        and np.isfinite(weights).all()
+        and not np.any(weights < 0)
+        and not np.any(weights > 0)
+    ):
+        return None
+    return _validated_weights(weights, n_bins, row_normalization)
 
 
 class _RegressionLineScorer(_Scorer):

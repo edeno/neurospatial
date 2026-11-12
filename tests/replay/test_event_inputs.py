@@ -220,6 +220,44 @@ class TestVanishingTemplate:
         )
 
 
+class TestTemplateWithoutMass:
+    """A share that underflows to 0 in every time bin has no weighted correlation."""
+
+    def test_the_event_gets_no_verdict(self, track):
+        env, rates = track
+        counts = _sweep_counts()
+        counts[:, 0] = 40  # every bin: impossible on the "in" maps
+        times = DT * (np.arange(len(counts)) + 0.5)
+        silent = rates.copy()
+        silent[0] = 0.0
+        maps = {"out": rates, "in": silent}
+        joint = decode_jointly(env, counts, maps, dt=DT, times=times)
+        assert not joint.joint("in").any()
+        result = detect_replay(
+            env,
+            joint,
+            times,
+            replay_method=dataclasses.replace(TIROLE_2022, n_shuffles=30),
+            spike_counts=counts,
+            encoding_models=maps,
+            dt=DT,
+            template="in",
+            rng=0,
+        )
+        assert np.isnan(result.score)
+        assert not result.is_replay
+
+    def test_a_shuffle_without_mass_scores_nan(self, joint_sweep):
+        from neurospatial.replay.significance import _WeightedCorrelationScorer
+
+        env, _maps, _counts, times, joint = joint_sweep
+        share = joint.joint("out")
+        scorer = _WeightedCorrelationScorer(env, share, times, row_normalization="none")
+        scores = scorer.scores([share, np.zeros_like(share), share], 3)
+        assert np.isnan(scores[1])
+        assert scores[0] == scores[2] == pytest.approx(scorer.observe().score)
+
+
 def test_a_sampled_score_without_shuffles_follows_the_seed(track, monkeypatch):
     env, rates = track
     counts = _sweep_counts()
