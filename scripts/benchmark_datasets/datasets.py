@@ -132,7 +132,9 @@ def create_benchmark_env(
     positions = rng.uniform(0, grid_extent, size=(n_samples, 2))
 
     # Create environment with bin_size=1.0 to get approximately grid_size bins
-    return Environment.from_samples(positions, bin_size=1.0)
+    # Every bin of the grid: about one sample per bin leaves many bins
+    # unvisited, which would split the arena into disconnected fragments.
+    return Environment.from_samples(positions, bin_size=1.0, infer_active_bins=False)
 
 
 def create_benchmark_fields(

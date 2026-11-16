@@ -127,7 +127,7 @@ class TestComputeStepLengths:
         assert isinstance(steps, np.ndarray)
 
         # Geodesic requires env
-        env = Environment.from_samples(positions, bin_size=5.0)
+        env = Environment.from_samples(positions, bin_size=5.0, infer_active_bins=False)
         bin_positions = env.bin_centers[env.bin_at(positions)]
         steps_geo = step_lengths(bin_positions, metric="geodesic", env=env)
         assert isinstance(steps_geo, np.ndarray)

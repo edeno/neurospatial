@@ -604,7 +604,7 @@ class TestConvolve:
     def test_convolve_parameter_order(self) -> None:
         """Test that parameter order is (field, kernel, env, ...)."""
         positions = np.array([[0, 0], [1, 0]], dtype=np.float64)
-        env = Environment.from_samples(positions, bin_size=0.5)
+        env = Environment.from_samples(positions, bin_size=0.5, infer_active_bins=False)
         field = np.ones(env.n_bins, dtype=np.float64)
 
         def kernel_fn(distances: np.ndarray) -> np.ndarray:

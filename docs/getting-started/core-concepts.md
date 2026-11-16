@@ -57,9 +57,10 @@ A **bin** is a discrete spatial unit with:
 import numpy as np
 from neurospatial import Environment
 
-# Tracked positions (cm) from a 100 x 100 cm open field
+# Tracked positions (cm) from a 100 x 100 cm open field: about 11 minutes
+# at 30 Hz, enough to visit almost every 2 cm bin several times
 rng = np.random.default_rng(0)
-positions = rng.uniform(0.0, 100.0, size=(2000, 2))
+positions = rng.uniform(0.0, 100.0, size=(20000, 2))
 
 # By default, only bins that contain at least one sample are active
 env = Environment.from_samples(positions, bin_size=2.0, units="cm")
@@ -161,7 +162,7 @@ from shapely.geometry import Point
 from neurospatial import Environment
 
 rng = np.random.default_rng(0)
-positions = rng.uniform(0.0, 100.0, size=(2000, 2))  # cm
+positions = rng.uniform(0.0, 100.0, size=(20000, 2))  # cm
 
 # Regular grid (automatic)
 env_grid = Environment.from_samples(positions, bin_size=2.0)
@@ -334,7 +335,8 @@ initialize later.
 import numpy as np
 from neurospatial import Environment
 
-positions = np.array([[0., 0.], [0., 10.], [10., 0.], [10., 10.]])
+rng = np.random.default_rng(0)
+positions = rng.uniform(0.0, 10.0, size=(500, 2))
 env = Environment.from_samples(positions, bin_size=2.0)
 bin_idx = env.bin_at(positions[:1])
 ```

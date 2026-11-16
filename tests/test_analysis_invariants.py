@@ -183,7 +183,9 @@ def test_chained_grid_transforms_accept_their_inverse():
 def test_coordinate_units_preserve_rates_and_posterior(method, n_dims, scale):
     """Changing cm to m/mm scales geometry and bandwidth, never Hz or seconds."""
     mask = np.ones((3,) * n_dims, dtype=bool)
-    mask[(1,) * n_dims] = False
+    # Drop a corner bin, not the center: in 1D the center is the only link
+    # between the other two bins, and without it no smoothing takes place.
+    mask[(0,) * n_dims] = False
     edges = (np.arange(4.0),) * n_dims
     env = Environment.from_grid_mask(mask, grid_edges=edges)
     converted = Environment.from_grid_mask(

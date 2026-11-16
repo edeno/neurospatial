@@ -443,7 +443,7 @@ positions, times = simulate_trajectory_ou(
 env = Environment.from_samples(
     positions,
     bin_size=2.5,             # 2.5 cm bins for a 100×100 cm arena
-    bin_count_threshold=5,
+    bin_count_threshold=2,    # drop bins that hold a single tracking sample
     dilate=True,
     fill_holes=True,
     name="OpenFieldSession1",
@@ -453,6 +453,10 @@ env = env.with_metadata(units="cm")
 print(f"Created environment with {env.n_bins} active bins")
 print(f"Spatial extent: {env.dimension_ranges}")
 assert env.bin_at([50.0, 50.0]) != -1, "Place cell center must be inside env!"
+# Smoothing and path distances never cross between parts of an environment
+# that no path joins. A high bin_count_threshold on a short session can cut
+# off such an island, so check before analyzing.
+assert len(env.components()) == 1, "Environment is split into separate parts!"
 
 # Step 3: Generate spike train for a simulated place cell
 # (In real experiments, load your spike timestamps here.)

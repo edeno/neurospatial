@@ -679,6 +679,7 @@ def minimal_1d_env() -> Environment:
     return Environment.from_samples(
         np.array([[0.0], [10.0]], dtype=np.float64),
         bin_size=5.0,
+        infer_active_bins=False,  # every bin between the endpoints, connected
     )
 
 

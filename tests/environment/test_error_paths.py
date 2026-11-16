@@ -12,7 +12,8 @@ from neurospatial.environment import Environment
 
 # Test data for creating environments
 _rng = np.random.default_rng(42)
-SAMPLE_DATA_2D = _rng.standard_normal((100, 2)) * 10
+# Dense enough that every 2 cm bin of the square is visited: one arena.
+SAMPLE_DATA_2D = _rng.uniform(-20.0, 20.0, (4000, 2))
 
 
 class TestPathBetweenErrorPaths:

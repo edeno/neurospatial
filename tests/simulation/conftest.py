@@ -16,8 +16,10 @@ def simple_2d_env():
         100x100 cm square arena with 2 cm bins.
     """
     # Create a grid of sample points
-    x = np.linspace(0, 100, 50)
-    y = np.linspace(0, 100, 50)
+    # One sample per centimeter, so every 2 cm bin is visited: a coarser
+    # lattice (2.04 cm) skips the bins at 49-51 cm and splits the arena in four.
+    x = np.linspace(0, 100, 101)
+    y = np.linspace(0, 100, 101)
     xx, yy = np.meshgrid(x, y)
     samples = np.column_stack([xx.ravel(), yy.ravel()])
 

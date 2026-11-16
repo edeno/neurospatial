@@ -1319,10 +1319,15 @@ def walk_session() -> tuple[NDArray[np.float64], ...]:
 
 def _unitless_env(positions, units, bin_size=5.0):
     """An environment in ``units``; a custom unit warns that it is free-form."""
+    # The walk misses some bins of the box; the box is the arena.
     if units in (None, "px", "cm", "m"):
-        return Environment.from_samples(positions, bin_size=bin_size, units=units)
+        return Environment.from_samples(
+            positions, bin_size=bin_size, units=units, infer_active_bins=False
+        )
     with pytest.warns(UserWarning, match="not in the standard registry"):
-        return Environment.from_samples(positions, bin_size=bin_size, units=units)
+        return Environment.from_samples(
+            positions, bin_size=bin_size, units=units, infer_active_bins=False
+        )
 
 
 @pytest.mark.parametrize(
@@ -1380,7 +1385,9 @@ def test_large_pixel_bandwidth_is_written_without_exponent(walk_session):
     from neurospatial import compute_spatial_rate
 
     spike_times, times, positions = walk_session
-    env = Environment.from_samples(positions * 1000, bin_size=5000.0, units="px")
+    env = Environment.from_samples(
+        positions * 1000, bin_size=5000.0, units="px", infer_active_bins=False
+    )
     with pytest.warns(UserWarning, match="resolved to 12500 px,"):
         compute_spatial_rate(env, spike_times, times, positions * 1000)
 
@@ -1406,7 +1413,12 @@ def test_no_fallback_warning_with_metric_units_explicit_bandwidth_or_binned(
 
     spike_times, times, positions = walk_session
     scale = {"m": 0.01, "mm": 10.0}.get(units, 1.0)  # positions are in cm
-    env = Environment.from_samples(positions * scale, bin_size=5.0 * scale, units=units)
+    env = Environment.from_samples(
+        positions * scale,
+        bin_size=5.0 * scale,
+        units=units,
+        infer_active_bins=False,
+    )
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         compute_spatial_rate(env, spike_times, times, positions * scale, **kwargs)
@@ -1476,7 +1488,7 @@ def test_directional_place_fields_warn_once_per_call(walk_session):
     from neurospatial.encoding import compute_directional_place_fields
 
     spike_times, times, positions = walk_session
-    env = Environment.from_samples(positions, bin_size=5.0)
+    env = Environment.from_samples(positions, bin_size=5.0, infer_active_bins=False)
     labels = np.where(np.arange(len(times)) % 500 < 250, "out", "in").astype(object)
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")

@@ -52,8 +52,12 @@ def coarse_track():
     times = np.arange(0.0, 200.0, 2.0)
     x = np.abs(((times / 2) % 40) - 20) * 4 + 5
     positions = np.column_stack([x, np.full_like(x, 5.0)])
+    # The samples are 8 cm apart, so bins are not inferred from them: the
+    # whole strip is the track.
     env = Environment.from_samples(
-        np.vstack([positions, positions + np.array([0.0, 5.0])]), bin_size=2.0
+        np.vstack([positions, positions + np.array([0.0, 5.0])]),
+        bin_size=2.0,
+        infer_active_bins=False,
     )
     region_builder = Regions(env.regions.values())
     region_builder.add("mid", point=(45.0, 5.0))
@@ -236,6 +240,8 @@ def test_gaps_across_missing_samples_are_refused_at_call_site(nan_bridged_track,
 def test_bridging_the_missing_samples_is_silent(nan_bridged_track, name):
     env, times, positions = nan_bridged_track
     with warnings.catch_warnings():
+        # The toy animal never stops, which is true but not under test.
+        warnings.filterwarnings("ignore", message=".*crossed their region.*")
         warnings.filterwarnings("error", message=".*excluded ALL.*")
         CALLS[name](env, times, positions, max_gap=0.25)
 
@@ -251,12 +257,13 @@ def test_rows_outside_the_environment_are_not_bridged_by_region_detectors(
     env, times, positions = nan_bridged_track
     outside = positions.copy()
     outside[1::2] = [500.0, 500.0]
-    with pytest.warns(UserWarning, match="outside the environment"):
-        _excluded_message(
-            name,
-            lambda: CALLS[name](env, times, outside, max_gap=None),
-            r"excluded ALL.*samples out of bounds or at NaN positions",
-        )
+    # Half the rows are outside, not the majority that warns of a units or
+    # frame mismatch, so the excluded intervals are the only report.
+    _excluded_message(
+        name,
+        lambda: CALLS[name](env, times, outside, max_gap=None),
+        r"excluded ALL.*samples out of bounds or at NaN positions",
+    )
 
 
 @pytest.mark.parametrize("name", sorted(CALLS))
