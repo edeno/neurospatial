@@ -320,7 +320,7 @@ class TestSubset:
                 or poly.boundary.distance(pt) < 0.1
             )
 
-    def test_subset_by_region_names(self, medium_2d_env: Environment) -> None:
+    def test_subset_by_regions(self, medium_2d_env: Environment) -> None:
         """Test subsetting by named regions."""
         # Make a copy to avoid mutating session-scoped fixture
         env = medium_2d_env.with_metadata()
@@ -340,7 +340,7 @@ class TestSubset:
         env = env.with_regions(region_builder)
 
         # Subset by region name
-        subset_env = env.subset(region_names=["center_region"])
+        subset_env = env.subset(regions=["center_region"])
 
         assert subset_env.n_bins > 0
         assert subset_env.n_bins < medium_2d_env.n_bins
@@ -350,7 +350,7 @@ class TestSubset:
     ) -> None:
         """Test that non-existent region name raises error."""
         with pytest.raises(ValueError, match=r"Region .* not found"):
-            medium_2d_env.subset(region_names=["nonexistent_region"])
+            medium_2d_env.subset(regions=["nonexistent_region"])
 
     def test_subset_inverted_selection(self, medium_2d_env: Environment) -> None:
         """Test inverted selection (complement)."""
@@ -418,19 +418,19 @@ class TestSubset:
         with pytest.raises(ValueError, match="needs 2-D bins"):
             simple_3d_env.subset(polygon=poly)
 
-    def test_subset_region_names_empty_raises_error(
+    def test_subset_regions_empty_raises_error(
         self, medium_2d_env: Environment
     ) -> None:
-        """Test that empty region_names list raises error."""
-        with pytest.raises(ValueError, match="cannot be empty"):
-            medium_2d_env.subset(region_names=[])
+        """Test that an empty regions list raises error."""
+        with pytest.raises(ValueError, match="is empty"):
+            medium_2d_env.subset(regions=[])
 
-    def test_subset_region_names_wrong_type_raises_error(
+    def test_subset_regions_wrong_type_raises_error(
         self, medium_2d_env: Environment
     ) -> None:
-        """Test that region_names with wrong type raises error."""
-        with pytest.raises(ValueError, match="must be a list or tuple"):
-            medium_2d_env.subset(region_names="not_a_list")  # type: ignore[arg-type]
+        """Test that regions with wrong type raises error."""
+        with pytest.raises(TypeError, match="regions"):
+            medium_2d_env.subset(regions=3)  # type: ignore[arg-type]
 
 
 @pytest.mark.filterwarnings(

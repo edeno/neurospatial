@@ -473,10 +473,10 @@ class TestTransitionMatrixNormalization:
         """
         bins = np.array([0, 1, 2], dtype=np.int32)
 
-        with pytest.raises(ValueError, match="lag must be positive"):
+        with pytest.raises(ValueError, match="lag must be a positive integer"):
             small_2d_env.transitions(bins=bins, lag=0)
 
-        with pytest.raises(ValueError, match="lag must be positive"):
+        with pytest.raises(ValueError, match="lag must be a positive integer"):
             small_2d_env.transitions(bins=bins, lag=-1)
 
     def test_transition_matrix_bins_dtype_validation(self, small_2d_env):

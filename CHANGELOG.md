@@ -2,6 +2,68 @@
 
 ## [Unreleased]
 
+### Environment: bin sequences, region subsets and the cost of smoothing
+
+- **Breaking:** `Environment.subset(region_names=...)` is now
+  `subset(regions=...)`, the name the API contract gives several regions. It
+  takes what `env.region_mask` takes (a name, a list, tuple or array of names
+  or `Region` values, one `Region`, or a mapping) and keeps exactly the bins
+  `env.region_mask(regions)` selects. `region_names=` raises a `TypeError`,
+  and a single name no longer needs a list: `env.subset(regions="goal")`.
+- **Breaking:** `bin_sequence` and `bin_sequence_with_runs` refuse an
+  `outside_value` other than `-1` or `None`. Any other integer was accepted
+  and the outside samples were marked `-1` all the same.
+- **Breaking:** `transitions(lag=...)` takes a positive integer; a float such
+  as `1.5` raised Python's slice `TypeError` and now raises a `ValueError`
+  that names `lag`. `reachable_from(metric="hops")` refuses a fractional
+  `radius`, which was rounded down without a word (`radius=2.9` gave 2 hops).
+- `bin_sequence` documents what it always did: a sample with a NaN
+  coordinate, and a sample that touches no valid interval, is removed from
+  the sequence, with either `outside_value`. With `dedup=False` the result
+  can therefore be shorter than `times` and does not index it; the docstring
+  said such samples got `outside_value`. Use `env.bin_at(positions)` for one
+  bin per sample. The spatial-analysis guide counted time outside the
+  environment from the deduplicated sequence, which counts runs, not
+  samples; it now uses `bin_at`.
+- `Environment.occupancy(bandwidth=...)` smooths without building the
+  `(n_bins, n_bins)` kernel, as `env.smooth` does. On a 6561-bin grid the
+  peak working memory fell from 3.1 GB to 0.3 GB (0.5 GB to 0.2 GB at 2601
+  bins). The result matches the kernel to about 1e-7 of its largest value and
+  keeps the total; tolerance-level negative values far from the animal are
+  set to zero. The first call computes the environment's diffusion
+  eigenbasis, which later `occupancy`, `smooth` and `diffuse` calls reuse.
+  For a bandwidth that is small for the arena that first call is slower than
+  the kernel was (38 s against 8 s at 6561 bins and a 5 cm bandwidth, 5 s
+  against 1.6 s at 2601 bins); for a 12 cm bandwidth it is faster (3 s
+  against 9 s at 6561 bins).
+- The first `env.smooth` or `env.diffuse` at a bandwidth that needs between
+  a fifth and a half of the diffusion modes no longer runs a large truncated
+  eigensolve first: it solves the full basis at once. On a 51 x 51 grid of
+  2 cm bins with a 5 cm bandwidth the first call fell from 24 s to 4 s, and
+  on a 26 x 26 grid with a 12 cm bandwidth from 1.2 s to 0.35 s. The
+  threshold is the measured crossover: a truncated solve for 20% of the
+  modes took 0.6, 3.2 and 32 s on 1225, 2601 and 6561 bins against 1.0, 3.8
+  and 28 s for the full one. Results changed by at most 2e-7 of the largest
+  value, inside the stated truncation tolerance. Grids of 6561 bins did not
+  get faster: there the eigensolve itself takes about 30 s either way.
+- `env.info()` (and `print(env)`) gains a `Connected Parts` line when no
+  path joins some bins to the rest, as happens when `from_samples` builds
+  bins from sparse positions or one stray tracking sample: path distances
+  between parts are infinite and smoothing does not cross them. Nothing is
+  printed for a connected environment.
+- `distance_between(metric="euclidean")` says how to get the straight line
+  (`np.linalg.norm` between two points, or `distance_to(...,
+  metric="euclidean")` between bin centers) instead of only listing the two
+  path metrics. `transitions(method="diffusion")` documents that its matrix
+  holds `n_bins ** 2` values.
+- `tests/test_package_layers.py` checks two rules of the contributing guide
+  across the package: no import of another package's `_` module, and no read
+  of an `Environment`'s private state outside `neurospatial.environment`.
+  The 80 existing exceptions are listed in
+  `tests/data/layering_exceptions.txt`, a list that only shrinks. Four
+  imports that bypassed re-exports already in `neurospatial.environment` now
+  use them.
+
 ### Documentation: measured false-positive rates of published nulls
 
 - The notes of `TIROLE_2022`, `OLAFSDOTTIR_2015`, `BUSH_2022`,

@@ -279,9 +279,12 @@ class Environment(Generic[_C]):
     methods read ``(distance, angle)`` rows on a polar environment. The
     shared ``distance_to`` method guards its Euclidean mode.
 
-    Instances are created via factory classmethods on ``Environment``
-    (``from_samples``, ``from_polygon``, ``from_grid_mask``,
-    ``from_pixel_mask``, ``from_graph``, ``from_layout``).
+    Instances are created via factory classmethods on ``Environment``:
+    ``from_samples`` and ``open_field`` (recorded positions), ``linear_track``,
+    ``maze`` and ``from_graph`` (tracks), ``from_polygon``, ``from_grid_mask``
+    and ``from_pixel_mask`` (a known arena shape), ``from_polar_egocentric``
+    (bins around the animal), and ``from_bins`` and ``from_layout`` (your own
+    bins). ``from_file``, ``from_dict`` and ``from_nwb`` read a saved one.
 
     Cartesian factories store position coordinates in length units. The
     from_polar_egocentric factory returns the same runtime class with radius in
@@ -982,9 +985,15 @@ class Environment(Generic[_C]):
         -------
         str
             Multi-line formatted string containing detailed environment information.
+            When no path joins some bins to the rest, a ``Connected Parts``
+            line gives the number of parts and the size of the largest: bins
+            built from sparse samples, or one stray tracking sample, are cut
+            off, so path distances to them are infinite and smoothing does
+            not reach them.
 
         See Also
         --------
+        components : The bins of each connected part.
         __repr__ : Single-line concise representation for quick inspection.
         _repr_html_ : Rich HTML representation for Jupyter notebooks.
 
@@ -1046,6 +1055,7 @@ class Environment(Generic[_C]):
             region_names=list(self.regions),
             landmark_names=list(self.landmarks),
             is_linearized_track=self.is_linearized_track,
+            part_sizes=[len(part) for part in self.components()],
         )
 
     @property
@@ -1882,6 +1892,19 @@ class Environment(Generic[_C]):
         """
         from neurospatial._validation import validate_choice
 
+        given: object = metric  # typed as the two path metrics
+        if given == "euclidean":
+            raise ValueError(
+                _format_error(
+                    "Environment.distance_between() has no metric='euclidean'.",
+                    why="Why: the straight line between two points ignores walls "
+                    "and bins, so it does not need an environment.",
+                    fix="for two points, np.linalg.norm(points[1] - points[0]); "
+                    "between bin centers, env.distance_to(bins=start, "
+                    "metric='euclidean')[end]; or pass metric='geodesic' for the "
+                    "shortest path inside the environment",
+                )
+            )
         validate_choice(
             metric,
             ("geodesic", "bin_graph"),
@@ -2107,9 +2130,10 @@ class Environment(Generic[_C]):
             ``k`` (for example where a new recording starts), whatever the elapsed
             time. Entry 0 is ignored.
         bandwidth : float, optional
-            If provided, apply diffusion kernel smoothing with this bandwidth
-            (in physical units). Uses mode='transition' to preserve total mass.
-            Smoothing preserves total occupancy time.
+            If provided, smooth the occupancy with this bandwidth (in physical
+            units), as ``env.smooth(occupancy, bandwidth=bandwidth,
+            mode='transition')`` does, which preserves the total occupancy
+            time. See Kernel smoothing in the Notes.
         time_allocation : {'start', 'linear'}, default='start'
             Method for allocating time intervals across bins:
 
@@ -2157,7 +2181,7 @@ class Environment(Generic[_C]):
 
         See Also
         --------
-        compute_kernel : Compute diffusion kernel for smoothing.
+        smooth : Smooth a field of values per bin.
         bin_at : Map single N-dimensional point to bin index.
 
         Notes
@@ -2212,6 +2236,14 @@ class Environment(Generic[_C]):
         **Kernel smoothing**: When bandwidth is provided, smoothing
         is applied after accumulation using mode='transition' normalization
         (kernel columns sum to 1), which preserves the total occupancy mass.
+        It is applied as :meth:`smooth` applies it, without building the
+        ``(n_bins, n_bins)`` kernel, so it reproduces that kernel to the
+        same tolerance (about 1e-6 of the largest value). Far from the animal
+        that tolerance can fall below zero; those values are set to zero,
+        since time in a bin is not negative. The first call computes the
+        environment's diffusion eigenbasis, which takes seconds to tens of
+        seconds on a few thousand bins; later ``occupancy``, ``smooth`` and
+        ``diffuse`` calls on the same environment reuse it.
 
         Examples
         --------
@@ -2270,7 +2302,7 @@ class Environment(Generic[_C]):
         positions: NDArray[np.float64],
         *,
         dedup: bool = True,
-        outside_value: int | None = -1,
+        outside_value: Literal[-1] | None = -1,
         max_gap: float | None = DEFAULT_MAX_GAP,
         epochs: Any = None,
         break_before: ArrayLike | None = None,
@@ -2292,12 +2324,18 @@ class Environment(Generic[_C]):
             polar environment.
         dedup : bool, default=True
             If True, collapse consecutive repeats: [A,A,A,B] → [A,B].
-            If False, return a bin index for every retained sample.
-        outside_value : int or None, default=-1
-            Bin index for samples outside environment bounds or with a NaN
-            coordinate (missing; see Missing data in the class Notes).
-            - If -1 (default), outside samples are marked with -1.
-            - If None, outside samples are dropped from the sequence entirely.
+            If False, return one bin index per retained sample. Missing (NaN)
+            samples and samples that touch no valid interval are removed, so
+            the result can be shorter than ``times`` and does not index it.
+            For one bin per row of ``positions``, use :meth:`bin_at`.
+        outside_value : -1 or None, default=-1
+            What to do with samples outside the environment:
+
+            - -1 (default): mark them with bin index -1.
+            - None: drop them from the sequence.
+
+            A sample with a NaN coordinate is missing, not outside: it is
+            removed either way (see Missing data in the class Notes).
         max_gap : float or None, default=1.0
             Longest stretch of missing tracking, in seconds, to bridge: the time
             between consecutive valid samples (a dropped frame and a NaN row are
@@ -2332,10 +2370,13 @@ class Environment(Generic[_C]):
             strictly increasing.
         ValueError
             If ``break_before`` is not a Boolean array with one entry per sample.
+        ValueError
+            If ``outside_value`` is not -1 or None.
 
         See Also
         --------
         bin_sequence_with_runs : Same mapping plus run-length boundaries.
+        bin_at : One bin per row of ``positions``, aligned with ``times``.
         occupancy : Compute time spent in each bin.
         transitions : Build empirical transition matrix from trajectory.
 
@@ -2393,7 +2434,7 @@ class Environment(Generic[_C]):
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
-        outside_value: int | None = -1,
+        outside_value: Literal[-1] | None = -1,
         max_gap: float | None = DEFAULT_MAX_GAP,
         epochs: Any = None,
         break_before: ArrayLike | None = None,
@@ -2412,9 +2453,9 @@ class Environment(Generic[_C]):
             Timestamps in seconds, strictly increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
             Position coordinates matching environment dimensions.
-        outside_value : int or None, default=-1
-            Bin index for samples outside environment bounds (see
-            :meth:`bin_sequence`). With ``outside_value=None``, outside
+        outside_value : -1 or None, default=-1
+            -1 marks samples outside the environment with bin index -1 and
+            None drops them (see :meth:`bin_sequence`). With ``outside_value=None``, outside
             gaps split runs even when consecutive in-env samples land
             in the same bin. A run's length is its extent in the original
             rows, including missing (NaN) rows bridged inside it, so
@@ -2565,8 +2606,8 @@ class Environment(Generic[_C]):
         Notes
         -----
         **Nearest-neighbor mode**: Uses KDTree to find closest bin center.
-        Deterministic and works on all layout types. Points farther than a
-        reasonable threshold from any bin center are marked as outside (NaN).
+        Deterministic and works on all layout types. A point reads NaN when
+        no bin contains it (``bin_at`` gives -1), however near a bin center is.
 
         **Linear mode**: Uses scipy.interpolate.RegularGridInterpolator for
         smooth interpolation on rectangular grids. For linear functions
@@ -2800,7 +2841,11 @@ class Environment(Generic[_C]):
         self: Environment[CartesianSystem],
         *,
         mask: NDArray[np.bool_] | None = None,
-        region_names: Sequence[str] | None = None,
+        regions: str
+        | Sequence[str | Region]
+        | Region
+        | Mapping[str, Region]
+        | None = None,
         polygon: shapely.Polygon | None = None,
         invert: bool = False,
         name: str | None = None,
@@ -2818,11 +2863,12 @@ class Environment(Generic[_C]):
         ----------
         mask : NDArray[np.bool_], shape (n_bins,), optional
             Boolean mask of bins to keep. True = keep, False = discard.
-        region_names : Sequence[str], optional
-            Keep the bins these named regions cover, by the rule of
-            :meth:`bins_in_region`: the bin containing a point region, and
-            the bins whose centers lie in a polygon region. Regions must
-            exist in self.regions.
+        regions : str, sequence of str or Region, Region, or mapping, optional
+            Keep the bins these regions cover, the bins
+            ``env.region_mask(regions)`` selects: the bin containing a point
+            region, and the bins whose centers lie in a polygon region. A
+            name refers to an entry in ``self.regions``; several regions give
+            their union.
         polygon : shapely.Polygon, optional
             Keep bins whose centers lie in this polygon, by the rule of
             :meth:`bins_in_region` (a center exactly on the edge is kept when
@@ -2848,7 +2894,7 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Exactly one of {mask, region_names, polygon} must be provided.
+        Exactly one of {mask, regions, polygon} must be provided.
 
         The connectivity graph is the induced subgraph: only edges where both
         endpoints are in the selection are kept. This may create disconnected
@@ -2895,9 +2941,9 @@ class Environment(Generic[_C]):
         kept and those on its north and east edges are not, so the 30 x 30 cm
         zone keeps 3 x 3 bins of 10 cm:
 
-        >>> env.subset(region_names=["goal"]).n_bins
+        >>> env.subset(regions="goal").n_bins
         9
-        >>> env.subset(region_names=["goal"], invert=True).n_bins
+        >>> env.subset(regions="goal", invert=True).n_bins
         112
 
         Crop to a polygon, or select bins with a boolean mask:
@@ -2915,7 +2961,7 @@ class Environment(Generic[_C]):
             self.regions,
             self._cache,
             mask=mask,
-            region_names=region_names,
+            regions=regions,
             polygon=polygon,
             invert=invert,
         )
@@ -5143,7 +5189,8 @@ class Environment(Generic[_C]):
         radius : int, float, or None, optional
             Maximum distance/hops. If None, find all reachable bins in the
             same connected component.
-            - For metric='hops': radius is maximum number of edges.
+            - For metric='hops': radius is maximum number of edges, a
+              whole number.
             - For metric='geodesic' or 'bin_graph': radius is a maximum
               path length in physical units.
         metric : {'hops', 'geodesic', 'bin_graph'}, default='hops'
@@ -5173,8 +5220,9 @@ class Environment(Generic[_C]):
             If the bin index is outside ``[0, n_bins)``.
         ValueError
             If more than one bin or point is given, the point is outside the
-            environment or has NaN coordinates, ``radius`` is negative, or
-            ``metric`` is not ``'hops'``, ``'geodesic'`` or ``'bin_graph'``.
+            environment or has NaN coordinates, ``radius`` is negative or,
+            with ``metric='hops'``, not a whole number, or ``metric`` is not
+            ``'hops'``, ``'geodesic'`` or ``'bin_graph'``.
         CartesianOnlyError
             For ``metric='geodesic'`` with a radius on an egocentric polar
             environment.
@@ -5667,7 +5715,7 @@ class Environment(Generic[_C]):
         edges but not those on its north and east edges, as a bin ``[a, b)``
         holds ``a``. This is the same
         rule as :meth:`region_mask`, :meth:`region_membership`,
-        ``distance_to(region=...)`` and ``subset(region_names=...)``.
+        ``distance_to(region=...)`` and ``subset(regions=...)``.
 
         Parameters
         ----------
@@ -7405,7 +7453,8 @@ class Environment(Generic[_C]):
             the class Notes) adds no transition to or from it.
         lag : int, default=1
             [Empirical mode] Temporal lag for transitions: count bins[t] → bins[t+lag].
-            Must be positive. lag=1 counts consecutive transitions, lag=2 skips one bin.
+            A positive integer, counted in samples. lag=1 counts consecutive
+            transitions, lag=2 skips one bin.
         allow_teleports : bool, default=False
             [Empirical mode] If False, only count transitions between graph-adjacent
             bins. Non-adjacent transitions (e.g., from tracking errors) are excluded.
@@ -7414,7 +7463,10 @@ class Environment(Generic[_C]):
         method : {'diffusion', 'random_walk'}, optional
             [Model mode] Type of model-based transitions:
             - 'random_walk': Uniform transitions to graph neighbors
-            - 'diffusion': Distance-weighted transitions via heat kernel
+            - 'diffusion': Distance-weighted transitions via heat kernel.
+              Every bin reaches every other bin of its connected part, so
+              the matrix holds ``n_bins ** 2`` values and building it takes
+              several times that in working memory (about 3 GB at 6500 bins).
             If provided, empirical parameters (bins/times/positions/lag/allow_teleports)
             are ignored.
         bandwidth : float, optional

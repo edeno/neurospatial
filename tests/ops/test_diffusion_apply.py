@@ -531,15 +531,17 @@ def test_cache_grows_with_smaller_sigma():
     env, source_coord = _build_env("hex")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    env.diffuse(fields["nonneg"], bandwidth=10.0, mode="density")
+    # Both bandwidths need fewer than a fifth of the modes, so both truncate.
+    env.diffuse(fields["nonneg"], bandwidth=20.0, mode="density")
     large = diffusion_eigenbasis(env._cache)
     rank_large_sigma = large.basis[1].shape[0]
     env.diffuse(
-        fields["nonneg"], bandwidth=8.0, mode="density"
+        fields["nonneg"], bandwidth=15.0, mode="density"
     )  # smaller sigma -> more modes
     small = diffusion_eigenbasis(env._cache)
     rank_small_sigma = small.basis[1].shape[0]
     assert rank_small_sigma > rank_large_sigma, "smaller sigma must grow the basis"
+    assert rank_small_sigma < env.n_bins, "both bandwidths stay truncated"
     # The holder is replaced, never edited: the earlier one keeps its basis.
     assert small is not large
     assert large.basis[1].shape[0] == rank_large_sigma
@@ -550,10 +552,10 @@ def test_cache_grows_with_smaller_sigma():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         dense = (
-            env.compute_kernel(bandwidth=8.0, mode="density", cache=False)
+            env.compute_kernel(bandwidth=15.0, mode="density", cache=False)
             @ fields["nonneg"]
         )
-    out = np.asarray(env.diffuse(fields["nonneg"], bandwidth=8.0, mode="density"))
+    out = np.asarray(env.diffuse(fields["nonneg"], bandwidth=15.0, mode="density"))
     assert _m_norm_rel(out, dense, env.bin_sizes) < _TRUNC_MNORM_TOL
 
 
@@ -595,7 +597,7 @@ def test_compute_kernel_does_not_poison_apply_cache():
     env, source_coord = _build_env("hex")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    env.diffuse(fields["nonneg"], bandwidth=10.0, mode="density")
+    env.diffuse(fields["nonneg"], bandwidth=15.0, mode="density")
     holder = diffusion_eigenbasis(env._cache)
     basis_shape = holder.basis[0].shape
     assert basis_shape[1] < env.n_bins  # truncated, not (n, n)
@@ -607,7 +609,7 @@ def test_compute_kernel_does_not_poison_apply_cache():
         )  # tiny sigma, dense expm
     # The apply cache is untouched by compute_kernel.
     assert diffusion_eigenbasis(env._cache) is holder
-    env.diffuse(fields["nonneg"], bandwidth=10.0, mode="average")
+    env.diffuse(fields["nonneg"], bandwidth=15.0, mode="average")
     assert diffusion_eigenbasis(env._cache).basis[0].shape[1] < env.n_bins
 
 
@@ -794,3 +796,56 @@ def test_shift_invert_fallback_warning_points_at_the_caller(monkeypatch):
     with pytest.warns(UserWarning, match="Shift-invert eigsh failed") as record:
         env.diffuse(field, bandwidth=10.0, mode="transition")
     assert {w.filename for w in record} == {__file__}
+
+
+def test_truncated_solves_stay_below_the_dense_crossover(monkeypatch):
+    """No truncated eigensolve asks for more than a fifth of the modes.
+
+    A truncated ``eigsh`` for a fifth of the modes takes about as long as the
+    dense ``eigh`` for all of them (measured on 1225-, 2601- and 6561-bin
+    grids), so a larger truncated solve is slower than the dense one that
+    serves every bandwidth. This bandwidth needs about a quarter of the modes.
+    """
+    from neurospatial import Environment
+    from neurospatial.ops import diffusion
+
+    ranks = []
+    original = diffusion._symmetric_eigenbasis
+
+    def recording(S, rank):
+        ranks.append(rank)
+        return original(S, rank)
+
+    monkeypatch.setattr(diffusion, "_symmetric_eigenbasis", recording)
+    axis = np.arange(0.0, 100.0, 0.5)
+    x, y = np.meshgrid(axis, axis)
+    env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=4.0)
+    field = np.random.default_rng(0).uniform(0.0, 1.0, env.n_bins)
+
+    env.diffuse(field, bandwidth=12.0, mode="average")
+
+    truncated = [rank for rank in ranks if rank is not None]
+    assert max(truncated, default=0) <= 0.2 * env.n_bins
+    assert ranks.count(None) == 1
+    assert diffusion_eigenbasis(env._cache).resolved[12.0] == "dense"
+
+
+@pytest.mark.parametrize(("geom", "sigma"), [("hex", 15.0), ("mesh", 20.0)])
+@pytest.mark.parametrize("mode", MODES)
+def test_truncated_basis_matches_dense_kernel_on_hex_and_mesh(geom, sigma, mode):
+    """Hexagons and triangles: a truncated basis reproduces the dense kernel.
+
+    The registry's large bandwidth needs more than a fifth of the modes on
+    these two layouts, so it resolves the full basis there. These bandwidths
+    need fewer, and are checked against a kernel computed live.
+    """
+    env, source_coord = _build_env(geom)
+    field = make_fields(env, source_bin(env, source_coord))["nonneg"]
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        out = np.asarray(env.diffuse(field, bandwidth=sigma, mode=mode))
+        dense = env.compute_kernel(bandwidth=sigma, mode=mode, cache=False) @ field
+
+    assert diffusion_eigenbasis(env._cache).basis[0].shape[1] < env.n_bins
+    assert _m_norm_rel(out, dense, env.bin_sizes) < _TRUNC_MNORM_TOL

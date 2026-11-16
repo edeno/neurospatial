@@ -589,3 +589,32 @@ class TestBinSequenceNonFiniteTimes:
         assert "times" in message
         assert "non-finite" in message
         assert "decreasing interval" not in message
+
+
+class TestBinSequenceOutsideValueChoices:
+    """``outside_value`` is -1 (mark outside samples) or None (drop them)."""
+
+    @pytest.mark.parametrize("method", ["bin_sequence", "bin_sequence_with_runs"])
+    @pytest.mark.parametrize("outside_value", [-99, 0, 5, 1.0, True])
+    def test_other_outside_values_are_refused(
+        self, holed_grid_env, method, outside_value
+    ):
+        env = holed_grid_env
+        positions = np.repeat(env.bin_centers[:1], 3, axis=0)
+        times = np.arange(3) * 0.1
+
+        with pytest.raises(ValueError, match=r"outside_value must be -1 or None"):
+            getattr(env, method)(times, positions, outside_value=outside_value)
+
+    def test_missing_rows_are_removed_not_marked(self, holed_grid_env):
+        """A NaN row is deleted from the sequence; ``bin_at`` keeps every row."""
+        env = holed_grid_env
+        positions = np.repeat(env.bin_centers[:1], 4, axis=0)
+        positions[1] = np.nan
+        times = np.arange(4) * 0.1
+
+        sequence = env.bin_sequence(times, positions, dedup=False)
+        aligned = env.bin_at(positions)
+
+        assert_array_equal(sequence, [0, 0, 0])
+        assert_array_equal(aligned, [0, -1, 0, 0])

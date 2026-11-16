@@ -920,7 +920,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
                 call="DecodingResult.plot",
             )
 
-        from neurospatial.environment._queries import _track_extents
+        from neurospatial.environment import _track_extents
 
         track = _track_extents(self.env)
         if track is None and self.env.n_dims != 2:

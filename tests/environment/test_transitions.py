@@ -307,15 +307,23 @@ class TestTransitionsValidation:
         """Test error for negative lag."""
         bins = np.array([0, 1], dtype=np.int32)
 
-        with pytest.raises(ValueError, match=r"lag must be positive"):
+        with pytest.raises(ValueError, match=r"lag must be a positive integer"):
             minimal_1d_env.transitions(bins=bins, lag=-1)
 
     def test_zero_lag(self, minimal_1d_env):
         """Test error for zero lag."""
         bins = np.array([0, 1], dtype=np.int32)
 
-        with pytest.raises(ValueError, match=r"lag must be positive"):
+        with pytest.raises(ValueError, match=r"lag must be a positive integer"):
             minimal_1d_env.transitions(bins=bins, lag=0)
+
+    @pytest.mark.parametrize("lag", [1.5, 2.0, True, "2"])
+    def test_non_integer_lag(self, minimal_1d_env, lag):
+        """A lag counts samples, so only a positive integer is accepted."""
+        bins = np.array([0, 1, 0, 1], dtype=np.int32)
+
+        with pytest.raises(ValueError, match=r"lag must be a positive integer"):
+            minimal_1d_env.transitions(bins=bins, lag=lag)
 
     def test_empty_bins_array(self, minimal_1d_env):
         """Test handling of empty bins array."""

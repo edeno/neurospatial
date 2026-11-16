@@ -173,8 +173,13 @@ def _info(
     region_names: Sequence[str],
     landmark_names: Sequence[str] = (),
     is_linearized_track: bool,
+    part_sizes: Sequence[int] = (),
 ) -> str:
-    """Format the multi-line geometry and region summary."""
+    """Format the multi-line geometry and region summary.
+
+    ``part_sizes`` holds the number of bins in each connected part of the
+    navigation graph, largest first; more than one adds a line saying so.
+    """
     # Build output line by line
     lines = []
 
@@ -189,6 +194,11 @@ def _info(
     lines.append(f"Layout Type: {layout_type}")
     lines.append(f"Dimensions: {n_dims}")
     lines.append(f"Number of Bins: {len(bin_sizes)}")
+    if len(part_sizes) > 1:
+        lines.append(
+            f"Connected Parts: {len(part_sizes)} (largest has {part_sizes[0]} of "
+            f"{len(bin_sizes)} bins; no path joins the parts, see env.components())"
+        )
     lines.append("")
 
     # Spatial extent

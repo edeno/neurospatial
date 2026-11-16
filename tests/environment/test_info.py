@@ -90,3 +90,41 @@ class TestEnvironmentInfo:
         polygon = Point(50, 50).buffer(30)
         env_polygon = Environment.from_polygon(polygon, bin_size=2.0, name="PolygonEnv")
         assert "PolygonEnv" in env_polygon.info()
+
+
+class TestInfoConnectedParts:
+    """``info()`` says when no path joins some bins to the rest.
+
+    ``from_samples`` makes a bin wherever a position falls, so sparse
+    coverage or a stray tracking sample leaves parts that are cut off: path
+    distances between them are infinite and smoothing does not cross.
+    """
+
+    def test_fragmented_environment_reports_its_parts(self):
+        positions = np.random.default_rng(0).uniform(0.0, 50.0, (60, 2))
+        env = Environment.from_samples(positions, bin_size=2.0, units="cm")
+        parts = env.components()
+        assert len(parts) > 1
+
+        info = env.info()
+
+        assert (
+            f"Connected Parts: {len(parts)} "
+            f"(largest has {len(parts[0])} of {env.n_bins} bins" in info
+        )
+
+    def test_stray_sample_is_reported(self):
+        axis = np.arange(0.0, 40.0, 0.5)
+        x, y = np.meshgrid(axis, axis)
+        positions = np.vstack([np.c_[x.ravel(), y.ravel()], [[90.0, 90.0]]])
+        env = Environment.from_samples(positions, bin_size=2.0, units="cm")
+
+        assert f"Connected Parts: 2 (largest has {env.n_bins - 1} of" in env.info()
+
+    def test_connected_environment_has_no_parts_line(self):
+        axis = np.arange(0.0, 40.0, 0.5)
+        x, y = np.meshgrid(axis, axis)
+        env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        assert len(env.components()) == 1
+
+        assert "Connected Parts" not in env.info()

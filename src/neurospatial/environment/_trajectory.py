@@ -23,6 +23,7 @@ import numpy as np
 import scipy.sparse
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     as_intervals,
@@ -34,10 +35,15 @@ from neurospatial._intervals import (
     warn_excluded_intervals,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._validation import validate_choice, validate_times_positions
+from neurospatial._validation import (
+    is_integer,
+    validate_choice,
+    validate_integer_at_least,
+    validate_times_positions,
+)
 from neurospatial._velocity import resolve_speed
 from neurospatial.environment._cache import AnalysisCache
-from neurospatial.environment._fields import _compute_kernel
+from neurospatial.environment._fields import _compute_kernel, _diffuse
 from neurospatial.geometry import (
     Binning,
     CartesianSystem,
@@ -272,12 +278,13 @@ def _occupancy(
 
     # Apply kernel smoothing if requested
     if bandwidth is not None:
-        # Use mode='transition' for occupancy (counts), not 'density'
-        # This ensures mass conservation: kernel columns sum to 1
-        kernel = _compute_kernel(
-            cache, binning, bandwidth, mode="transition", writable=False
-        )
-        occupancy = kernel @ occupancy
+        # mode='transition' moves seconds between bins and keeps their total.
+        # It is applied matrix-free, as env.smooth does: the dense kernel
+        # would need n_bins**2 values.
+        occupancy = _diffuse(cache, binning, occupancy, bandwidth, mode="transition")
+        # The apply leaves tolerance-level negatives far from the animal;
+        # time in a bin is not negative.
+        occupancy = np.clip(occupancy, 0.0, None)
 
     return occupancy
 
@@ -291,7 +298,7 @@ def _bin_sequence(
     cache: AnalysisCache,
     call: str,
     dedup: bool,
-    outside_value: int | None,
+    outside_value: Literal[-1] | None,
     gap_splits_runs: bool,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
@@ -302,6 +309,19 @@ def _bin_sequence(
     the public methods choose which fields of the result to expose.
     ``call`` names the public method in error messages.
     """
+    if outside_value is not None and not (
+        is_integer(outside_value) and outside_value == -1
+    ):
+        raise ValueError(
+            _format_error(
+                f"{call}: outside_value must be -1 or None, got {outside_value!r}.",
+                why="Why: -1 is the one bin index that means outside the "
+                "environment, as in bin_at; another value would name a real bin "
+                "or a second marker that no other method reads.",
+                fix="pass outside_value=-1 to mark outside samples with -1, or "
+                "outside_value=None to drop them",
+            )
+        )
     times, positions = validate_times_positions(times, positions, call=call)
     # Before the gap warnings, so wrong positions are reported first.
     require_position_columns(positions, binning.bins.n_dims, call=call)
@@ -659,10 +679,13 @@ def _empirical_transitions(
         if breaks is not None:
             mask = ~breaks[1:]
 
-    # Validate lag
-    if lag < 1:
-        msg = f"lag must be positive (got {lag})."
-        raise ValueError(msg)
+    lag = validate_integer_at_least(
+        lag,
+        1,
+        name="lag",
+        owner="transitions()",
+        hint="lag counts samples: bins[t] -> bins[t + lag]",
+    )
 
     # Handle empty or single-element sequences
     if len(bins) == 0 or len(bins) <= lag:

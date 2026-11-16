@@ -376,6 +376,50 @@ class TestOccupancySmoothing:
         # The wrong (average) mode misses by far more than that tolerance.
         assert np.max(np.abs(heat @ raw - smoothed)) > 0.1
 
+    def test_smoothed_occupancy_does_not_build_the_dense_kernel(self, monkeypatch):
+        """``bandwidth=`` smooths without the ``(n_bins, n_bins)`` kernel.
+
+        The dense kernel needs ``n_bins**2`` values (3 GB of working memory
+        at 6561 bins), so smoothing applies the heat operator to the
+        occupancy instead, as ``env.smooth`` does.
+        """
+        from neurospatial.environment import _fields
+
+        def refuse(*args, **kwargs):
+            pytest.fail("occupancy(bandwidth=) built the dense kernel")
+
+        monkeypatch.setattr(_fields, "heat_kernel_from_W", refuse)
+        axis = np.arange(0.0, 60.0, 0.5)
+        x, y = np.meshgrid(axis, axis)
+        env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        times = np.arange(0.0, 20.0, 0.1)
+        positions = np.random.default_rng(3).uniform(5.0, 55.0, (times.size, 2))
+
+        raw = env.occupancy(times, positions)
+        smoothed = env.occupancy(times, positions, bandwidth=6.0)
+
+        assert_allclose(
+            smoothed, env.smooth(raw, bandwidth=6.0, mode="transition"), atol=1e-6
+        )
+
+    def test_smoothed_occupancy_is_never_negative(self):
+        """Time in a bin is not negative, however far the bin is from the animal.
+
+        All the time is spent in one corner, so the bins across the arena
+        get only the smoothing's tolerance-level noise, which can be negative.
+        """
+        axis = np.arange(0.0, 100.0, 0.5)
+        x, y = np.meshgrid(axis, axis)
+        env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        times = np.arange(0.0, 60.0, 0.1)
+        positions = np.tile([[1.0, 1.0]], (times.size, 1))
+
+        raw = env.occupancy(times, positions)
+        smoothed = env.occupancy(times, positions, bandwidth=12.0)
+
+        assert smoothed.min() >= 0.0
+        assert_allclose(smoothed.sum(), raw.sum(), rtol=1e-6)
+
 
 class TestOccupancyOutsideBehavior:
     """Test handling of samples outside environment bounds."""

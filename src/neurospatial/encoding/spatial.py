@@ -5500,7 +5500,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         import matplotlib.pyplot as plt
         from matplotlib.axes import Axes
 
-        from neurospatial.environment._queries import _track_extents
+        from neurospatial.environment import _track_extents
 
         track = _track_extents(self.env)
         if track is None and self.env.n_dims != 2:

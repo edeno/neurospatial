@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import shapely
 import shapely.geometry.base
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import RegionNotFoundError, _format_error
+from neurospatial._exceptions import _format_error
 from neurospatial.environment._fields import with_cached_faces
 from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry import (
     Binning,
     polygon_bin_mask,
-    region_bin_masks,
     select_bins,
 )
+from neurospatial.ops import _regions_mask
 from neurospatial.regions import Region
 
 if TYPE_CHECKING:
@@ -29,25 +29,28 @@ if TYPE_CHECKING:
 def _subset_mask(
     binning: Binning,
     arena: Arena,
-    regions: Mapping[str, Region],
-    cache: AnalysisCache,
+    named_regions: Mapping[str, Region],
     *,
     mask: NDArray[np.bool_] | None = None,
-    region_names: Sequence[str] | None = None,
+    regions: Any = None,
     polygon: shapely.Polygon | None = None,
     invert: bool = False,
 ) -> NDArray[np.bool_]:
-    """Validate a spatial selection and build its active-bin mask."""
+    """Validate a spatial selection and build its active-bin mask.
+
+    ``named_regions`` are the environment's regions, which names in
+    ``regions`` refer to.
+    """
     n_bins = binning.bins.n_bins
     # --- Input Validation ---
     # Exactly one selection parameter must be provided
-    n_params = sum([mask is not None, region_names is not None, polygon is not None])
+    n_params = sum([mask is not None, regions is not None, polygon is not None])
     if n_params == 0:
-        msg = "Exactly one of {mask, region_names, polygon} must be provided."
+        msg = "Exactly one of {mask, regions, polygon} must be provided."
         raise ValueError(msg)
     if n_params > 1:
         msg = (
-            "Exactly one of {mask, region_names, polygon} must be provided. "
+            "Exactly one of {mask, regions, polygon} must be provided. "
             f"Got {n_params} parameters."
         )
         raise ValueError(msg)
@@ -72,30 +75,23 @@ def _subset_mask(
             )
             raise ValueError(msg)
 
-    elif region_names is not None:
-        # Validate region_names parameter
-        if not isinstance(region_names, (list, tuple)):
-            msg = f"region_names must be a list or tuple, got {type(region_names)}"
-            raise ValueError(msg)
-
-        if len(region_names) == 0:
-            msg = "region_names cannot be empty"
-            raise ValueError(msg)
-
-        # Check all regions exist
-        for name in region_names:
-            if name not in regions:
-                raise RegionNotFoundError(
-                    name, available=list(regions), argument="region_names", in_list=True
+    elif regions is not None:
+        # The same selection as env.region_mask(regions): a tuple or an
+        # array of names is the list it takes.
+        if isinstance(regions, (tuple, np.ndarray)):
+            regions = list(regions)
+        if isinstance(regions, (list, Mapping)) and len(regions) == 0:
+            raise ValueError(
+                _format_error(
+                    "subset() got regions= that is empty.",
+                    why="Why: with no region there are no bins to keep.",
+                    fix="name at least one region, such as regions='goal' or "
+                    "regions=['left', 'right']",
                 )
-
-        covered = region_bin_masks(
-            [regions[name] for name in region_names],
-            binning=binning,
-            arena=arena,
-            indexes=cache,
+            )
+        mask = _regions_mask(
+            regions, named_regions=named_regions, binning=binning, arena=arena
         )
-        mask = np.asarray(covered.any(axis=1), dtype=np.bool_)
 
     elif polygon is not None:
         # Validate polygon parameter
@@ -131,11 +127,11 @@ def _subset_mask(
 def _subset(
     binning: Binning,
     arena: Arena,
-    regions: Mapping[str, Region],
+    named_regions: Mapping[str, Region],
     cache: AnalysisCache,
     *,
     mask: NDArray[np.bool_] | None = None,
-    region_names: Sequence[str] | None = None,
+    regions: Any = None,
     polygon: shapely.Polygon | None = None,
     invert: bool = False,
 ) -> _Derivation:
@@ -143,10 +139,9 @@ def _subset(
     mask = _subset_mask(
         binning,
         arena,
-        regions,
-        cache,
+        named_regions,
         mask=mask,
-        region_names=region_names,
+        regions=regions,
         polygon=polygon,
         invert=invert,
     )
