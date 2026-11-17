@@ -60,7 +60,7 @@ def _found() -> set[str]:
     for path in sorted(SRC.rglob("*.py")):
         relative = path.relative_to(SRC)
         owner = relative.parts[0] if relative.parts[0] in packages else None
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 modules = [node.module]
             elif isinstance(node, ast.Import):
@@ -88,7 +88,9 @@ def _found() -> set[str]:
 
 
 def _listed() -> set[str]:
-    lines = (line.strip() for line in EXCEPTIONS.read_text().splitlines())
+    lines = (
+        line.strip() for line in EXCEPTIONS.read_text(encoding="utf-8").splitlines()
+    )
     return {line for line in lines if line and not line.startswith("#")}
 
 
