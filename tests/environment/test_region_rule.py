@@ -239,7 +239,7 @@ def test_outline_region_through_edge_centers_covers_its_area():
 def test_subset_by_region_keeps_exactly_the_region_bins(subset_env):
     env = subset_env
     for name in ("reward", "zone"):
-        sub = env.subset(region_names=[name])
+        sub = env.subset(regions=[name])
         np.testing.assert_array_equal(
             sub.bin_centers, env.bin_centers[env.bins_in_region(name)]
         )
@@ -250,12 +250,12 @@ def test_subset_by_polygon_matches_the_polygon_region(subset_env):
     polygon = env.regions["zone"].data
     np.testing.assert_array_equal(
         env.subset(polygon=polygon).bin_centers,
-        env.subset(region_names=["zone"]).bin_centers,
+        env.subset(regions=["zone"]).bin_centers,
     )
 
 
 def test_subset_uses_the_edge_rule():
-    """subset(region_names=) and subset(polygon=) split edge centers alike."""
+    """subset(regions=) and subset(polygon=) split edge centers alike."""
     edges = np.arange(0.0, 11.0, 2.0)  # centers 1, 3, 5, 7, 9
     env = Environment.from_grid_mask(np.ones((5, 5), dtype=bool), (edges, edges))
     zone = box(3.0, 3.0, 7.0, 7.0)  # edges through the centers at 3 and 7
@@ -263,7 +263,7 @@ def test_subset_uses_the_edge_rule():
     regions.add("zone", polygon=zone)
     env = env.with_regions(regions)
     expected = env.bin_centers[env.bins_in_region("zone")]
-    for sub in (env.subset(region_names=["zone"]), env.subset(polygon=zone)):
+    for sub in (env.subset(regions=["zone"]), env.subset(polygon=zone)):
         np.testing.assert_array_equal(sub.bin_centers, expected)
     assert len(expected) == 4
 

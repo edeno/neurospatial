@@ -37,7 +37,7 @@ class TestSubsetBasic:
         node_ids = list(sub_env.connectivity.nodes())
         assert node_ids == list(range(sub_env.n_bins))
 
-    def test_subset_with_region_names(self):
+    def test_subset_with_regions(self):
         """Subset with region names selects bins inside regions."""
         rng = np.random.default_rng(42)
         # Create environment
@@ -49,7 +49,7 @@ class TestSubsetBasic:
         env = env.with_regions(region_builder)
 
         # Subset to region
-        sub_env = env.subset(region_names=["left_half"])
+        sub_env = env.subset(regions=["left_half"])
 
         # Should have fewer bins than original
         assert sub_env.n_bins < env.n_bins
@@ -209,7 +209,7 @@ class TestSubsetValidation:
     """Test input validation."""
 
     def test_subset_requires_exactly_one_parameter(self):
-        """Exactly one of {bins, region_names, polygon} must be provided."""
+        """Exactly one of {mask, regions, polygon} must be provided."""
         rng = np.random.default_rng(42)
         env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
@@ -251,15 +251,15 @@ class TestSubsetValidation:
         env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         with pytest.raises(ValueError, match=r"Region.*not found"):
-            env.subset(region_names=["nonexistent_region"])
+            env.subset(regions=["nonexistent_region"])
 
-    def test_subset_empty_region_names_raises_error(self):
-        """Empty region_names list raises ValueError."""
+    def test_subset_empty_regions_raises_error(self):
+        """Empty regions list raises ValueError."""
         rng = np.random.default_rng(42)
         env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
-        with pytest.raises(ValueError, match=r"region_names.*empty"):
-            env.subset(region_names=[])
+        with pytest.raises(ValueError, match=r"regions.*empty"):
+            env.subset(regions=[])
 
     def test_subset_point_region_keeps_the_bin_containing_it(self):
         """A point region selects the bin that contains the point."""
@@ -269,7 +269,7 @@ class TestSubsetValidation:
         region_builder.add("goal", point=[50, 50])
         env = env.with_regions(region_builder)
 
-        sub = env.subset(region_names=["goal"])
+        sub = env.subset(regions=["goal"])
 
         (goal_bin,) = env.bins_in_region("goal")
         assert sub.n_bins == 1
@@ -296,7 +296,7 @@ class TestSubsetInvert:
         assert sub_env.n_bins + inv_env.n_bins == env.n_bins
 
     def test_subset_invert_with_region(self):
-        """invert works with region_names."""
+        """invert works with regions."""
         rng = np.random.default_rng(42)
         env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
@@ -306,8 +306,8 @@ class TestSubsetInvert:
         env = env.with_regions(region_builder)
 
         # Subset and inverted subset
-        sub_env = env.subset(region_names=["center"])
-        inv_env = env.subset(region_names=["center"], invert=True)
+        sub_env = env.subset(regions=["center"])
+        inv_env = env.subset(regions=["center"], invert=True)
 
         # Should be complementary
         assert sub_env.n_bins + inv_env.n_bins == env.n_bins
@@ -576,3 +576,52 @@ class TestSubsetKeepsParentConnectivity:
             np.testing.assert_allclose(
                 result.distance_to(bins=[0]), walled.distance_to(bins=[0])
             )
+
+
+class TestSubsetByRegions:
+    """``subset(regions=...)`` keeps the bins ``region_mask`` selects."""
+
+    @staticmethod
+    def _env() -> Environment:
+        from neurospatial.regions import Regions
+
+        axis = np.arange(0.0, 20.0, 0.5)
+        x, y = np.meshgrid(axis, axis)
+        env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        regions = Regions()
+        regions.add("left", polygon=box(0.0, 0.0, 6.0, 20.0))
+        regions.add("goal", point=(15.0, 15.0))
+        return env.with_regions(regions)
+
+    @pytest.mark.parametrize(
+        "select",
+        [
+            lambda env: "left",
+            lambda env: ["left"],
+            lambda env: ("left", "goal"),
+            lambda env: np.array(["left", "goal"]),
+            lambda env: env.regions["left"],
+            lambda env: [env.regions["left"], "goal"],
+            lambda env: env.regions,
+        ],
+        ids=["name", "list", "tuple", "array", "region", "mixed", "mapping"],
+    )
+    def test_keeps_the_bins_region_mask_selects(self, select):
+        env = self._env()
+        regions = select(env)
+        as_list = list(regions) if isinstance(regions, (tuple, np.ndarray)) else regions
+
+        sub = env.subset(regions=regions)
+
+        expected = env.bin_centers[env.region_mask(as_list)]
+        np.testing.assert_array_equal(sub.bin_centers, expected)
+
+    def test_old_region_names_keyword_is_refused(self):
+        env = self._env()
+        with pytest.raises(TypeError, match="region_names"):
+            env.subset(region_names=["left"])
+
+    def test_empty_selection_is_refused(self):
+        env = self._env()
+        with pytest.raises(ValueError, match=r"regions.*empty"):
+            env.subset(regions=[])

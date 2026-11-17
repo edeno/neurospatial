@@ -378,6 +378,12 @@ class TestDistanceBetween:
         ):
             small_2d_env.distance_between(bins=[0, neighbor], metric="hops")
 
+    def test_distance_between_euclidean_names_the_straight_line(self, small_2d_env):
+        """The straight line needs no environment, so the refusal says how to get it."""
+        with pytest.raises(ValueError, match=r"np\.linalg\.norm") as excinfo:
+            small_2d_env.distance_between(bins=[0, 1], metric="euclidean")
+        assert "distance_to" in str(excinfo.value)
+
 
 class TestPathBetween:
     """Tests for Environment.path_between() method."""
@@ -619,6 +625,19 @@ class TestReachableFrom:
         """Test that negative radius raises ValueError."""
         with pytest.raises(ValueError, match="radius must be non-negative"):
             small_2d_env.reachable_from(bins=0, radius=-5)
+
+    @pytest.mark.parametrize("radius", [2.9, 0.5])
+    def test_reachable_from_fractional_hops_raises(self, small_2d_env, radius):
+        """A hop count is whole; a fractional one is not rounded down."""
+        with pytest.raises(ValueError, match="whole number of hops"):
+            small_2d_env.reachable_from(bins=0, radius=radius, metric="hops")
+
+    def test_reachable_from_whole_float_hops(self, small_2d_env):
+        """A whole number of hops given as a float is the same hop count."""
+        assert_array_equal(
+            small_2d_env.reachable_from(bins=0, radius=2.0),
+            small_2d_env.reachable_from(bins=0, radius=2),
+        )
 
     def test_reachable_from_invalid_metric_raises(self, small_2d_env):
         """Test that invalid metric raises ValueError."""

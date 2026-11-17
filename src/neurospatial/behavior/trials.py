@@ -358,7 +358,7 @@ def detect_trials(
     >>> from shapely.geometry import box
     >>> from neurospatial import Environment, Regions
     >>> from neurospatial.behavior import detect_trials
-    >>> times = np.arange(0.0, 30.0, 0.5)
+    >>> times = np.arange(0.0, 30.0, 0.05)
     >>> x = 50.0 - 48.0 * np.cos(2 * np.pi * times / 20.0)
     >>> positions = np.column_stack([x, np.zeros_like(x)])
     >>> env = Environment.from_samples(positions, bin_size=4.0)

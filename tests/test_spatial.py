@@ -130,7 +130,7 @@ class TestEnvironmentClearCache:
     def env_with_caches(self):
         """Create environment and populate various caches."""
         rng = np.random.default_rng(42)
-        data = rng.random((100, 2)) * 100
+        data = rng.random((8000, 2)) * 100
         env = Environment.from_samples(data, bin_size=5.0)
 
         # Populate KDTree cache via nearest_bin

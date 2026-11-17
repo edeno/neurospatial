@@ -567,7 +567,9 @@ warn_on_drop
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> corners = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]])
-        >>> env = Environment.from_samples(corners, bin_size=5.0)
+        >>> env = Environment.from_samples(
+        ...     corners, bin_size=5.0, infer_active_bins=False
+        ... )
         >>> models = np.full((2, env.n_bins), 5.0)
         >>> decoder = BayesianDecoder.from_models(env, models, unit_ids=[3, 8])
         >>> decoder.is_fitted, decoder.unit_ids.tolist()

@@ -544,7 +544,8 @@ class TestFieldMetrics:
         """
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((5000, 2)) * 20
-        env = Environment.from_samples(positions, bin_size=2.0)
+        # Every bin of the box: the cloud's thin tails leave isolated bins.
+        env = Environment.from_samples(positions, bin_size=2.0, infer_active_bins=False)
 
         # Create field with uniform firing
         firing_rate = np.zeros(env.n_bins)
@@ -603,7 +604,7 @@ class TestFieldMetrics:
         """Test graph centroid with single bin field."""
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((5000, 2)) * 20
-        env = Environment.from_samples(positions, bin_size=2.0)
+        env = Environment.from_samples(positions, bin_size=2.0, infer_active_bins=False)
 
         firing_rate = np.zeros(env.n_bins)
         field_bins = np.array([5])

@@ -1,0 +1,88 @@
+# Places that do not yet follow the package-layer rule checked by
+# tests/test_package_layers.py (docs/contributing.md, "Layers").
+#
+#   import <file> <module>        <file> imports another package's _ module
+#   attribute <file> <expression> <file> reads an Environment's private state
+#
+# Files are relative to src/neurospatial. Remove a line when its exception is
+# fixed; do not add lines for new code.
+attribute animation/_tracks.py env._binning
+attribute datasets/_overview.py rec.env._binning
+attribute decoding/metrics.py env._cache
+attribute encoding/_physical_border.py env._cache
+attribute encoding/grid.py env._cache
+attribute io/files.py env._binning
+attribute io/files.py env._cache
+attribute ops/_paths.py env._cache
+attribute ops/_paths.py self._env._cache
+attribute replay/circular.py env._binning
+attribute replay/criteria.py env._binning
+attribute replay/criteria.py env._cache
+attribute replay/trajectory.py env._binning
+import animation/_scene_rendering.py neurospatial.environment._bin_mapping
+import animation/_scene_rendering.py neurospatial.environment._comparison
+import animation/_tracks.py neurospatial.geometry._coordinates
+import animation/_tracks.py neurospatial.geometry._graph
+import animation/backends/_napari_scene.py neurospatial.environment._fastplotlib_volume
+import animation/backends/fastplotlib_backend.py neurospatial.environment._fastplotlib
+import animation/backends/fastplotlib_backend.py neurospatial.environment._fastplotlib_compat
+import animation/backends/fastplotlib_backend.py neurospatial.environment._fastplotlib_volume
+import annotation/converters.py neurospatial.geometry._arena_fit
+import behavior/navigation.py neurospatial.encoding._validation
+import behavior/navigation.py neurospatial.ops._types
+import behavior/segmentation.py neurospatial.geometry._polygon
+import behavior/segmentation.py neurospatial.ops._types
+import behavior/trajectory.py neurospatial.ops._types
+import behavior/vte.py neurospatial.encoding._validation
+import decoding/_result.py neurospatial.ops._types
+import decoding/metrics.py neurospatial.environment._cache
+import decoding/metrics.py neurospatial.geometry._arena
+import decoding/metrics.py neurospatial.ops._types
+import decoding/session.py neurospatial.encoding._spatial_counts
+import encoding/_backend.py neurospatial.ops._types
+import encoding/_egocentric_counts.py neurospatial.ops._types
+import encoding/_field_metrics.py neurospatial.ops._types
+import encoding/_metrics.py neurospatial.geometry._boundaries
+import encoding/_physical_border.py neurospatial.geometry._arena
+import encoding/_physical_border.py neurospatial.geometry._boundaries
+import encoding/_physical_border.py neurospatial.ops._types
+import encoding/_smoothing.py neurospatial.ops._types
+import encoding/_view_counts.py neurospatial.geometry._boundaries
+import encoding/border.py neurospatial.geometry._boundaries
+import encoding/border.py neurospatial.ops._types
+import encoding/boundary_vector.py neurospatial.geometry._boundaries
+import encoding/directional.py neurospatial.ops._types
+import encoding/egocentric.py neurospatial.geometry._lookup
+import encoding/egocentric.py neurospatial.ops._types
+import encoding/grid.py neurospatial.ops._paths
+import encoding/spatial.py neurospatial.geometry._boundaries
+import encoding/spatial.py neurospatial.ops._types
+import encoding/view.py neurospatial.geometry._boundaries
+import encoding/view.py neurospatial.ops._types
+import environment/_affine.py neurospatial.geometry._derive
+import environment/_clipping.py neurospatial.geometry._lookup
+import environment/_comparison.py neurospatial.geometry._arena
+import environment/_comparison.py neurospatial.geometry._codecs
+import environment/_fastplotlib.py neurospatial.animation._style
+import environment/_fields.py neurospatial.ops._types
+import environment/_queries.py neurospatial.ops._types
+import environment/_visualization.py neurospatial.layout._plotting
+import environment/core.py neurospatial.animation._view
+import environment/core.py neurospatial.ops._types
+import io/files.py neurospatial.environment._fields
+import io/files.py neurospatial.geometry._codecs
+import ops/_linear_allocation.py neurospatial.geometry._arrays
+import ops/_linear_allocation.py neurospatial.geometry._regular_lookup
+import ops/_paths.py neurospatial.geometry._hex_lookup
+import ops/_paths.py neurospatial.geometry._locators
+import ops/boundary_vectors.py neurospatial.geometry._boundaries
+import ops/visibility.py neurospatial.geometry._boundaries
+import reactivation/methods.py neurospatial.decoding._time_bins
+import regions/ops.py neurospatial.geometry._region_bins
+import replay/calibration.py neurospatial.decoding._time_bins
+import replay/significance.py neurospatial.decoding._support
+import replay/significance.py neurospatial.decoding._time_bins
+import simulation/models/boundary_cells.py neurospatial.geometry._boundaries
+import simulation/models/object_vector_cells.py neurospatial.ops._types
+import simulation/models/place_cells.py neurospatial.ops._types
+import simulation/models/spatial_view_cells.py neurospatial.geometry._boundaries

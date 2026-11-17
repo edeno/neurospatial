@@ -223,7 +223,7 @@ or None
     >>> bin_centers
     array([0.0125, 0.0375, 0.0625, 0.0875])
     >>> positions = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]])
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> env = Environment.from_samples(positions, bin_size=5.0, infer_active_bins=False)
     >>> encoding_models = np.array(
     ...     [
     ...         np.full(env.n_bins, 5.0),

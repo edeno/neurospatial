@@ -167,7 +167,7 @@ def bin_sequence(
     positions: NDArray[np.float64],
     *,
     dedup: bool = True,
-    outside_value: int | None = -1,
+    outside_value: Literal[-1] | None = -1,
     max_gap: float | None = 1.0,
     epochs: Any = None,
 ) -> NDArray[np.int32]:
@@ -181,9 +181,12 @@ def bin_sequence(
         Position coordinates over time.
     dedup : bool, default True
         If True, remove consecutive duplicate bins (compress runs).
-    outside_value : int or None, default -1
-        Bin index for samples outside active bins. ``None`` drops
-        them from the returned sequence.
+        If False, one bin per retained sample: missing (NaN) samples and
+        samples isolated by gaps are removed, so the result can be
+        shorter than ``times``.
+    outside_value : -1 or None, default -1
+        ``-1`` marks samples outside the environment with bin index
+        ``-1``. ``None`` drops them from the returned sequence.
     max_gap : float or None, default 1.0
         Longest stretch of missing tracking, in seconds, to bridge.
         Longer gaps (tracking losses, pauses between sessions) are
@@ -206,7 +209,7 @@ def bin_sequence_with_runs(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    outside_value: int | None = -1,
+    outside_value: Literal[-1] | None = -1,
     max_gap: float | None = 1.0,
     epochs: Any = None,
 ) -> BinSequenceWithRuns:
@@ -260,20 +263,17 @@ print(f"Mean dwell time: {run_times.mean():.3f} seconds")
 **Advanced Usage:**
 
 ```python
-# Keep duplicates for fixed-rate analysis
+# Keep repeats: one bin per retained sample (missing samples are removed)
 full_sequence = env.bin_sequence(times, positions, dedup=False)
 
 # Drop out-of-bounds samples instead of marking them with -1
 in_env_only = env.bin_sequence(times, positions, outside_value=None)
 
-# Analyze time outside environment
-sequence_with_invalid = env.bin_sequence(times, positions, outside_value=-1)
-time_outside = (
-    np.sum(sequence_with_invalid == -1)
-    / len(times)
-    * (times[-1] - times[0])
-)
-print(f"Time outside environment: {time_outside:.1f} seconds")
+# One bin per row of positions, aligned with times: use bin_at.
+# -1 marks a sample that is outside the environment or missing (NaN).
+bin_per_sample = env.bin_at(positions)
+fraction_outside = np.mean(bin_per_sample == -1)
+print(f"Samples outside the environment or missing: {fraction_outside:.1%}")
 ```
 
 **Use Cases:**
@@ -982,7 +982,7 @@ def subset(
     self,
     *,
     mask: NDArray[np.bool_] | None = None,
-    region_names: Sequence[str] | None = None,
+    regions: str | Sequence[str | Region] | Region | Mapping[str, Region] | None = None,
     polygon: shapely.Polygon | None = None,
     invert: bool = False,
     name: str | None = None,
@@ -994,9 +994,10 @@ def subset(
     ----------
     mask : NDArray[np.bool_], shape (n_bins,), optional
         Boolean mask of bins to keep. True = keep, False = discard.
-    region_names : Sequence[str], optional
-        Keep the bins these named regions cover: the bin containing a point
-        region, or the bins whose centers lie in a polygon region.
+    regions : str, sequence of str or Region, Region, or mapping, optional
+        Keep the bins these regions cover, the bins ``env.region_mask(regions)``
+        selects: the bin containing a point region, or the bins whose centers
+        lie in a polygon region. A name refers to an entry in ``env.regions``.
     polygon : shapely.Polygon, optional
         Keep bins whose centers lie in this polygon (2D only). A center
         exactly on the edge is kept when nudging it north-east moves it
@@ -1469,12 +1470,12 @@ assert not np.allclose(env_baseline.bin_centers[0], centers[0])
 
 ```python
 # Use sparse matrices for transitions
-T = env.transitions(positions, normalize=False)  # Sparse CSR format
+T = env.transitions(times=times, positions=positions, normalize=False)  # sparse CSR
 # DON'T convert to dense unless necessary
 # T_dense = T.toarray()  # Only if env.n_bins is small (<1000)
 
 # Subset environment for region-specific analysis
-env_region = env.subset(region_names=[region_name])
+env_region = env.subset(regions=region_name)
 # Now all operations faster on smaller env_region
 ```
 

@@ -398,8 +398,8 @@ class TestRegionIntegration:
         region_builder.add("center", polygon=box(3, 3, 7, 7))
         env = env.with_regions(region_builder)
 
-        # Create subset using region_names parameter
-        subset_env = env.subset(region_names=["center"])
+        # Create subset using the regions parameter
+        subset_env = env.subset(regions=["center"])
 
         # Subset should have fewer bins
         assert subset_env.n_bins < env.n_bins

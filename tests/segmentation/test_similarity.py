@@ -227,7 +227,7 @@ class TestTrajectorySimilarity:
     def test_trajectory_similarity_all_methods(self):
         """Test that all methods return values in [0, 1] range."""
         positions = np.random.RandomState(42).uniform(0, 100, (200, 2))
-        env = Environment.from_samples(positions, bin_size=5.0)
+        env = Environment.from_samples(positions, bin_size=5.0, infer_active_bins=False)
 
         trajectory1 = np.array([0, 5, 10, 15, 20], dtype=np.int64)
         trajectory2 = np.array([2, 7, 12, 17, 22], dtype=np.int64)
@@ -320,7 +320,7 @@ class TestDetectGoalDirectedRuns:
     def test_detect_goal_directed_runs_min_progress_filter(self):
         """Test that min_progress filters out short runs."""
         # Create 2D environment with deterministic grid
-        x = np.linspace(0, 100, 25)
+        x = np.linspace(0, 100, 101)
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
@@ -407,7 +407,7 @@ class TestDetectGoalDirectedRuns:
     def test_detect_goal_directed_runs_empty_trajectory(self):
         """Empty trajectory should return empty list."""
         # Create 2D environment with deterministic grid
-        x = np.linspace(0, 100, 20)
+        x = np.linspace(0, 100, 101)
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
@@ -574,7 +574,7 @@ class TestSimilarityIntegration:
     def test_similarity_workflow(self):
         """Test complete workflow: detect similar trajectories."""
         # Create 2D environment with deterministic grid
-        x = np.linspace(0, 100, 25)
+        x = np.linspace(0, 100, 101)
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
@@ -598,7 +598,7 @@ class TestSimilarityIntegration:
     def test_goal_directed_and_similarity(self):
         """Test detecting goal-directed runs and comparing their similarity."""
         # Create 2D environment with deterministic grid
-        x = np.linspace(0, 100, 25)
+        x = np.linspace(0, 100, 101)
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)

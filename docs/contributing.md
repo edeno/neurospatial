@@ -124,8 +124,8 @@ storage or rendering package. `layout` and `ops` are peers. When a new import
 points upward, move the imported code down or the importer up. The exceptions
 are function-local imports in the `Environment` methods that hand off to
 storage or rendering (`to_file`, `to_nwb`, `animate_fields`, ...), which load
-those packages only when called. Nothing checks these layers automatically;
-review imports by hand.
+those packages only when called. Nothing checks the direction of these layers
+automatically; review imports by hand.
 
 A package imports another package's names from that package's `__init__`
 (for example `from neurospatial.geometry import Binning`), never from its `_`
@@ -135,7 +135,10 @@ defined, and the package `__init__` re-exports it under that name
 (`from neurospatial.ops import _ensure_global_modes`); only `__all__` names are
 public API. `geometry` is wholly internal, so its names carry no underscore.
 `geometry/` has no import cycles: when two modules need each other, move the
-shared definition to a lower module.
+shared definition to a lower module. `tests/test_package_layers.py` checks
+both parts of this paragraph. The places that do not follow it yet are listed
+in `tests/data/layering_exceptions.txt`; that list only shrinks, so remove a
+line when you fix its exception and do not add one for new code.
 
 `neurospatial.binning` and `neurospatial.arena` are the public import paths
 for geometry records. Importing them does not load layout engines,

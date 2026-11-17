@@ -179,7 +179,9 @@ def bin_center_fingerprint(env: Environment) -> str:
 
 # ---------------------------------------------------------------------------
 # Geometry registry: name -> (builder, sigma_small, sigma_large).
-# sigma_small forces (near-)full rank; sigma_large forces truncation.
+# sigma_small forces (near-)full rank. sigma_large needs under a fifth of the
+# modes on the 2-D grids and the polar grid, so those truncate; the 1-D cases,
+# hexagons and the mesh need more at it and resolve the full basis.
 # ---------------------------------------------------------------------------
 GEOMETRIES: dict[str, tuple[Callable[[], tuple], float, float]] = {
     "grid_1d": (build_grid_1d, 1.0, 8.0),

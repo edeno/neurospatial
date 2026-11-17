@@ -75,10 +75,13 @@ __all__ = [
 # weight ``exp(-t*lambda)`` is below ``_HEAT_KERNEL_RANK_TOL``; once the resolved
 # rank would exceed ``_HEAT_KERNEL_DENSE_FRACTION * n_bins`` a truncated ``eigsh``
 # no longer beats a dense ``eigh``, so solve the full dense basis once and keep
-# it: it serves every later bandwidth without another eigensolve.
+# it: it serves every later bandwidth without another eigensolve. The fraction
+# is the measured crossover: on square grids of 1225, 2601 and 6561 bins a
+# shift-invert ``eigsh`` for 20% of the modes took 0.6, 3.2 and 32 s against
+# 1.0, 3.8 and 28 s for the dense ``eigh``, and twice as long at 25-30%.
 # ``_HEAT_KERNEL_RANK_START`` is the first probe size for the adaptive search.
 _HEAT_KERNEL_RANK_TOL = 1e-6
-_HEAT_KERNEL_DENSE_FRACTION = 0.5
+_HEAT_KERNEL_DENSE_FRACTION = 0.2
 _HEAT_KERNEL_RANK_START = 32
 # Relative accuracy of an untruncated (full-basis) apply: float64 roundoff in
 # the eigenbasis product, measured near 1e-14 of the largest output.

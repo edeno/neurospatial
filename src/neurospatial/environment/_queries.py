@@ -197,6 +197,19 @@ def _reachable_from(
         msg = f"metric must be 'hops', 'geodesic' or 'bin_graph'. Got metric='{metric}'"
         raise ValueError(msg)
 
+    if radius is not None and metric == "hops" and radius != int(radius):
+        raise ValueError(
+            _format_error(
+                f"reachable_from(metric='hops') needs a whole number of hops, "
+                f"got radius={radius}.",
+                why="Why: hops count the connections crossed, so a fraction of "
+                "one has no meaning and would be rounded down.",
+                fix=f"pass a whole number, such as radius={int(radius)}, or give "
+                "a length in the environment's units with metric='geodesic' or "
+                "metric='bin_graph'",
+            )
+        )
+
     graph = env.connectivity
     reachable = np.zeros(graph.number_of_nodes(), dtype=bool)
 

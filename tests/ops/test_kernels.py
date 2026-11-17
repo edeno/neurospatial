@@ -266,7 +266,7 @@ class TestEnvironmentComputeKernel:
 
     def test_compute_kernel_cache_behavior(self):
         rng = np.random.default_rng(42)
-        data = rng.uniform(0, 10, (50, 2))
+        data = rng.uniform(0, 10, (2000, 2))
         env = Environment.from_samples(data, bin_size=1.0)
         kernel1 = env.compute_kernel(bandwidth=1.0, mode="transition", cache=True)
         kernel2 = env.compute_kernel(bandwidth=1.0, mode="transition", cache=True)
@@ -279,7 +279,7 @@ class TestEnvironmentComputeKernel:
 
     def test_compute_kernel_cache_disabled(self):
         rng = np.random.default_rng(42)
-        data = rng.uniform(0, 10, (50, 2))
+        data = rng.uniform(0, 10, (2000, 2))
         env = Environment.from_samples(data, bin_size=1.0)
         kernel1 = env.compute_kernel(bandwidth=1.0, mode="transition", cache=False)
         kernel2 = env.compute_kernel(bandwidth=1.0, mode="transition", cache=False)

@@ -907,7 +907,7 @@ zone or a maze arm, covers the bins whose centers lie inside it. A center
 exactly on its edge is covered when nudging it a hair north-east would move it
 inside, so polygons that share an edge, such as quadrants, split the centers on
 it and no bin is in two of them. `bins_in_region`, `region_mask`, `region_membership`,
-`distance_to` with a region, `subset(region_names=...)`,
+`distance_to` with a region, `subset(regions=...)`,
 `subset(polygon=...)` and `regions_to_mask` all follow it, so the bins you
 count time in are the bins you measure distance to.
 
@@ -916,9 +916,9 @@ count time in are the bins you measure distance to.
 | `env.region_membership()`, point region | no bins | the bin containing the point |
 | `regions_to_mask(env, "reward")`, point region | no bins and a warning | the bin containing the point |
 | `env.distance_to("reward")`, point region | warning, then `ValueError` | distance to the bin containing the point |
-| `env.subset(region_names=["reward"])`, point region | `ValueError` | keeps the bin containing the point |
+| `env.subset(regions="reward")`, point region | `ValueError` | keeps the bin containing the point |
 | `env.bins_in_region("zone")`, centers on the polygon's edge | left out | included on the south and west edges, left out on the north and east edges |
-| `env.subset(polygon=...)` and `subset(region_names=...)`, centers on the edge | left out | as `bins_in_region` |
+| `env.subset(polygon=...)` and `subset(regions=...)`, centers on the edge | left out | as `bins_in_region` |
 | `include_boundary=` on `bins_in_region`, `region_mask`, `region_membership`, `subset`, `regions_to_mask`, `points_in_any_region` and `regions_containing_points` | chose open or closed edges | removed; one rule for every query |
 
 A bin center lies exactly on a polygon's edge when the polygon is drawn on the
@@ -1048,7 +1048,9 @@ end.
 
 `subset` selects bins with a boolean mask, so its keyword is `mask=`; `bins=`
 always means integer bin indices, and `env.subset(bins=west)` raises a
-`TypeError`:
+`TypeError`. Its region selection is `regions=`, which takes what
+`env.region_mask` takes (a name, a list of names or `Region` values); the
+earlier `region_names=` raises a `TypeError`:
 
 <!-- docs-test: run -->
 ```python
@@ -1387,7 +1389,7 @@ from neurospatial.encoding import (
 )
 from neurospatial.simulation import GridCellModel
 
-open_field = np.random.default_rng(0).uniform(0, 100, size=(5000, 2))  # x, y in cm
+open_field = np.random.default_rng(0).uniform(0, 100, size=(20000, 2))  # x, y in cm
 arena = Environment.from_samples(open_field, bin_size=2.0, units="cm")
 cell = GridCellModel(arena, grid_spacing=30.0, grid_orientation=np.radians(20.0))
 autocorr = spatial_autocorrelation(arena, cell.firing_rate(np.zeros(len(arena.bin_centers)), arena.bin_centers))

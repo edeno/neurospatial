@@ -92,7 +92,8 @@ def sim() -> tuple[Environment, list[np.ndarray], np.ndarray, np.ndarray]:
 def _small_env() -> Environment:
     """Tiny 2-D env for fast construction / validation tests."""
     positions = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]])
-    return Environment.from_samples(positions, bin_size=5.0)
+    # The four corners span the arena; every bin between them is active.
+    return Environment.from_samples(positions, bin_size=5.0, infer_active_bins=False)
 
 
 def _make_linear_sim(

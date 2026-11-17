@@ -2970,7 +2970,7 @@ def _prior_rows(prior: Any, rows: NDArray[np.intp], n_time_bins: int) -> Any:
 
 def _track_length(env: Environment, operation: str) -> float:
     """Summed length of the track's bins, as TrajectoryMetrics.track_length."""
-    from neurospatial.environment._queries import _require_track_extents
+    from neurospatial.environment import _require_track_extents
 
     starts, stops = _require_track_extents(
         env, operation, alternative="or give thresholds in environment units"

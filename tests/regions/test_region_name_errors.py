@@ -60,9 +60,9 @@ def _lookups(env: Environment, folder: Path) -> dict[str, tuple[Any, Any, str]]:
             "pass region='reward'",
         ),
         "subset": (
-            lambda value: env.subset(region_names=value),
+            lambda value: env.subset(regions=value),
             ["rewrd"],
-            "pass region_names=['reward']",
+            "pass regions='reward'",
         ),
         "Regions.remove": (
             lambda value: builder.remove(value),

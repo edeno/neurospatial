@@ -1893,7 +1893,7 @@ def simulated_null_events(
     >>> null.intervals.round(2).tolist()[:2]
     [[0.0, 0.2], [1.2, 1.4]]
     """
-    from neurospatial.environment._queries import _require_track_extents
+    from neurospatial.environment import _require_track_extents
     from neurospatial.simulation import simulate_replay_event
 
     operation = "simulated_null_events()"

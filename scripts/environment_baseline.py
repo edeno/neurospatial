@@ -50,7 +50,7 @@ from neurospatial import Environment
 from neurospatial.encoding._smoothing import resolve_spatial_bandwidth, smooth_rate_map
 from neurospatial.io import from_dict, from_file, to_dict, to_file
 from neurospatial.layout import create_layout
-from neurospatial.ops.basis import heat_kernel_wavelet_basis
+from neurospatial.ops.basis import heat_kernel_basis
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.ops.transforms import translate
 
@@ -93,7 +93,10 @@ def _base_environments() -> Iterator[tuple[str, Any]]:
     yield (
         "track",
         Environment.from_graph(
-            track, edge_order=[(0, 1), (1, 2), (1, 3)], edge_spacing=0.0, bin_size=2.0
+            track,
+            edge_order=[(0, 1), (1, 2), (1, 3)],
+            bin_size=2.0,
+            track_width=4.0,
         ),
     )
     yield (
@@ -239,12 +242,12 @@ def _probe(out: dict[str, np.ndarray], tag: str, env: Any, x: dict[str, Any]) ->
         "geometry": lambda: env,
         "boundary_bins": lambda: env.boundary_bins,
         "ncomp": lambda: env._diffusion_geometry.n_components,
-        "smooth": lambda: env.smooth(x["field"], bandwidth=3.0),
-        "diffuse": lambda: env.diffuse(x["field"], bandwidth=3.0),
+        "smooth": lambda: env.smooth(x["field"], bandwidth=3.0, mode="average"),
+        "diffuse": lambda: env.diffuse(x["field"], bandwidth=3.0, mode="transition"),
         "grad": lambda: gradient(env, x["field"]),
         "divgrad": lambda: divergence(env, gradient(env, x["field"])),
-        "wavelet": lambda: heat_kernel_wavelet_basis(
-            env, centers=np.array([0, env.n_bins // 2]), scales=[1.0, 3.0]
+        "heat_kernel_basis": lambda: heat_kernel_basis(
+            env, centers=np.array([0, env.n_bins // 2]), bandwidth=[1.0, 3.0]
         ),
         "gaussian_kde": lambda: smooth_rate_map(
             env,

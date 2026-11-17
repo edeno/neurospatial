@@ -577,7 +577,7 @@ def confusion_matrix(
     Create a simple environment and posterior:
 
     >>> positions = np.array([[0, 0], [10, 0], [0, 10], [10, 10]])
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> env = Environment.from_samples(positions, bin_size=5.0, infer_active_bins=False)
     >>> n_bins = env.n_bins
 
     Perfect decoding (posterior peaks at actual position):

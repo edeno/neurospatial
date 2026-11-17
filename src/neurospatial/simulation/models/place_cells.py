@@ -149,7 +149,7 @@ class PlaceCellModel:
     >>> import numpy as np
     >>>
     >>> # Create environment
-    >>> samples = np.random.uniform(0, 100, (1000, 2))
+    >>> samples = np.random.uniform(0, 100, (20000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
     >>> env = env.with_metadata(units="cm")
     >>>
@@ -472,7 +472,7 @@ class PlaceCellModel:
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> from neurospatial.simulation import PlaceCellModel
-        >>> samples = np.random.uniform(0, 100, (100, 2))
+        >>> samples = np.random.uniform(0, 100, (20000, 2))
         >>> env = Environment.from_samples(samples, bin_size=2.0)
         >>> env = env.with_metadata(units="cm")
         >>> pc = PlaceCellModel(env, center=[50.0, 50.0], width=10.0, max_rate=20.0)

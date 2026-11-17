@@ -417,7 +417,7 @@ def open_field_env() -> Environment:
 def sparse_regime_env() -> Environment:
     """Larger single-component grid so a modest ``rank`` stays truncated.
 
-    400 bins with a rank well below ``dense_fraction * n`` (0.5 * 400 = 200)
+    400 bins with a rank below ``dense_fraction * n`` (0.2 * 400 = 80)
     keeps the resolver in the sparse (persisted) eigenbasis regime, so
     eigensolve-reuse across calls is observable.
     """

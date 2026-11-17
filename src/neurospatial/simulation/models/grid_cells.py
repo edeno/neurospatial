@@ -145,7 +145,7 @@ class GridCellModel:
     >>> from neurospatial import Environment
     >>> from neurospatial.simulation import simulate_trajectory_ou, GridCellModel
     >>> # Create 2D environment
-    >>> samples = np.random.uniform(0, 100, (1000, 2))
+    >>> samples = np.random.uniform(0, 100, (20000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
     >>> env = env.with_metadata(units="cm")
     >>>
@@ -299,7 +299,7 @@ class GridCellModel:
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> from neurospatial.simulation import GridCellModel
-        >>> samples = np.random.uniform(0, 100, (500, 2))
+        >>> samples = np.random.uniform(0, 100, (20000, 2))
         >>> env = Environment.from_samples(samples, bin_size=2.0)
         >>> env = env.with_metadata(units="cm")
         >>> gc = GridCellModel(env, grid_spacing=40.0)

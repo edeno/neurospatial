@@ -142,7 +142,7 @@ class HeadDirectionCellModel:
     >>> from neurospatial.behavior import heading_from_velocity
     >>>
     >>> # Create environment and trajectory
-    >>> samples = np.random.uniform(0, 100, (1000, 2))
+    >>> samples = np.random.uniform(0, 100, (20000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
     >>> env = env.with_metadata(units="cm")  # required for simulate_trajectory_ou
     >>> positions, times = simulate_trajectory_ou(

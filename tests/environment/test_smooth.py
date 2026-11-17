@@ -70,7 +70,7 @@ class TestSmoothBasic:
     def test_smooth_preserves_dtype(self):
         """Smoothed field should be float64."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 30
+        positions = rng.random((2000, 2)) * 30
         env = Environment.from_samples(positions, bin_size=3.0)
 
         field = rng.random(env.n_bins)
@@ -169,7 +169,7 @@ class TestSmoothModes:
     def test_smooth_transition_mode(self):
         """Test mode='transition' parameter."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
+        positions = rng.random((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = rng.random(env.n_bins)
@@ -182,7 +182,7 @@ class TestSmoothModes:
     def test_smooth_density_mode(self):
         """Test mode='density' parameter."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
+        positions = rng.random((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = rng.random(env.n_bins)
@@ -229,7 +229,7 @@ class TestSmoothValidation:
     def test_smooth_wrong_field_shape_raises_error(self):
         """Field with wrong shape should raise ValueError."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
+        positions = rng.random((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         # Wrong shape
@@ -241,7 +241,7 @@ class TestSmoothValidation:
     def test_smooth_negative_bandwidth_raises_error(self):
         """Negative bandwidth should raise ValueError."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
+        positions = rng.random((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = rng.random(env.n_bins)
@@ -252,7 +252,7 @@ class TestSmoothValidation:
     def test_smooth_zero_bandwidth_raises_error(self):
         """Zero bandwidth should raise ValueError."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
+        positions = rng.random((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = rng.random(env.n_bins)
@@ -263,7 +263,7 @@ class TestSmoothValidation:
     def test_smooth_invalid_mode_raises_error(self):
         """Invalid mode should raise ValueError."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
+        positions = rng.random((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = rng.random(env.n_bins)
@@ -274,7 +274,7 @@ class TestSmoothValidation:
     def test_smooth_takes_the_same_field_batch_as_diffuse(self):
         """A (n_bins, n_fields) batch smooths each column as smooth does alone."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
+        positions = rng.random((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
         fields = rng.random((env.n_bins, 3))
         fields[0, 1] = np.nan  # one missing bin in the middle column
@@ -293,7 +293,7 @@ class TestSmoothValidation:
     def test_fields_with_bins_last_are_refused_with_the_transpose(self):
         """Population rates are (n_units, n_bins); smoothing needs bins first."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
+        positions = rng.random((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
         rates = rng.random((3, env.n_bins))
 
@@ -305,7 +305,7 @@ class TestSmoothValidation:
     def test_smooth_field_with_inf_raises_error(self):
         """Field containing Inf should raise ValueError."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
+        positions = rng.random((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = np.ones(env.n_bins)
@@ -317,7 +317,7 @@ class TestSmoothValidation:
     def test_smooth_field_with_negative_inf_raises_error(self):
         """Field containing -Inf should raise ValueError."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
+        positions = rng.random((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = np.ones(env.n_bins)
@@ -329,7 +329,7 @@ class TestSmoothValidation:
     def test_smooth_empty_field_handled(self):
         """Empty field (all zeros) should be handled gracefully."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
+        positions = rng.random((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = np.zeros(env.n_bins)
@@ -414,7 +414,7 @@ class TestSmoothCaching:
     def test_smooth_uses_kernel_cache(self):
         """Repeated calls with same bandwidth should use cached kernel."""
         rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
+        positions = rng.random((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field1 = rng.random(env.n_bins)
