@@ -1389,7 +1389,7 @@ from neurospatial.encoding import (
 )
 from neurospatial.simulation import GridCellModel
 
-open_field = np.random.default_rng(0).uniform(0, 100, size=(5000, 2))  # x, y in cm
+open_field = np.random.default_rng(0).uniform(0, 100, size=(20000, 2))  # x, y in cm
 arena = Environment.from_samples(open_field, bin_size=2.0, units="cm")
 cell = GridCellModel(arena, grid_spacing=30.0, grid_orientation=np.radians(20.0))
 autocorr = spatial_autocorrelation(arena, cell.firing_rate(np.zeros(len(arena.bin_centers)), arena.bin_centers))

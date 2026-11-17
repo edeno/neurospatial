@@ -82,7 +82,7 @@ def field_size(
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding._field_metrics import field_size
-    >>> positions = np.random.randn(1000, 2) * 10
+    >>> positions = np.random.uniform(-20, 20, (5000, 2))
     >>> env = Environment.from_samples(positions, bin_size=2.0)
     >>> field_bins = np.array([0, 1, 2, 3, 4])
     >>> size = field_size(env, field_bins)
@@ -253,7 +253,7 @@ def rate_map_centroid(
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding._field_metrics import rate_map_centroid
-    >>> positions = np.random.randn(1000, 2) * 10
+    >>> positions = np.random.uniform(-20, 20, (5000, 2))
     >>> env = Environment.from_samples(positions, bin_size=2.0)
     >>> firing_rate = np.random.rand(env.n_bins) * 5
     >>> field_bins = np.array([0, 1, 2, 3, 4])
@@ -593,7 +593,7 @@ def rate_map_coherence(
     >>> from neurospatial.encoding._field_metrics import rate_map_coherence
     >>>
     >>> # Create environment
-    >>> positions = np.random.randn(5000, 2) * 20
+    >>> positions = np.random.uniform(-40, 40, (20000, 2))
     >>> env = Environment.from_samples(positions, bin_size=2.0)
     >>>
     >>> # Smooth Gaussian field (high coherence)
@@ -605,7 +605,7 @@ def rate_map_coherence(
     >>>
     >>> coherence_smooth = rate_map_coherence(env, firing_rate_smooth)
     >>> print(f"Smooth field coherence: {coherence_smooth:.3f}")  # doctest: +SKIP
-    Smooth field coherence: 0.850
+    Smooth field coherence: 4.457
 
     See Also
     --------
@@ -879,7 +879,7 @@ def field_shape_metrics(
     >>> from neurospatial.encoding._field_metrics import field_shape_metrics
     >>>
     >>> # Create 2D environment
-    >>> data = np.random.randn(1000, 2) * 20
+    >>> data = np.random.uniform(-40, 40, (20000, 2))
     >>> env = Environment.from_samples(data, bin_size=2.0)
     >>>
     >>> # Create elongated field along x-axis
@@ -895,7 +895,7 @@ def field_shape_metrics(
     >>> # Compute shape metrics
     >>> shape = field_shape_metrics(env, firing_rate, field_bins)
     >>> print(f"Eccentricity: {shape['eccentricity']:.2f}")  # doctest: +SKIP
-    Eccentricity: 0.87
+    Eccentricity: 0.98
 
     See Also
     --------
@@ -1099,7 +1099,7 @@ def field_shift_distance(
     >>> from neurospatial.encoding._field_metrics import field_shift_distance
     >>>
     >>> # Create two environments (same layout)
-    >>> data = np.random.randn(1000, 2) * 20
+    >>> data = np.random.uniform(-40, 40, (20000, 2))
     >>> env1 = Environment.from_samples(data, bin_size=2.0, name="session1")
     >>> env2 = Environment.from_samples(data, bin_size=2.0, name="session2")
     >>>

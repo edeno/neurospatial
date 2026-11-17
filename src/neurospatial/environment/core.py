@@ -319,12 +319,13 @@ class Environment(Generic[_C]):
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> positions = np.array([[0.0, 0.0], [0.0, 2.0], [2.0, 0.0], [2.0, 2.0]])
-    >>> env = Environment.from_samples(positions, bin_size=1.0, units="cm")
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0.0, 100.0, size=(5000, 2))  # x, y in cm
+    >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
     >>> env.n_dims
     2
     >>> env.bin_at(positions).shape
-    (4,)
+    (5000,)
     """
 
     _metadata: _Metadata
@@ -1745,7 +1746,9 @@ class Environment(Generic[_C]):
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> env = Environment.from_samples(
-        ...     np.array([[0.0, 0.0], [3.0, 0.0]]), bin_size=1.0
+        ...     np.array([[0.0, 0.0], [3.0, 0.0]]),
+        ...     bin_size=1.0,
+        ...     infer_active_bins=False,
         ... )
         >>> distances, bins = env.bin_center_tree().query([[0.4, 0.5]], k=2)
         >>> bins.tolist()
@@ -3241,7 +3244,7 @@ class Environment(Generic[_C]):
         >>> import numpy as np
         >>> # Create 2D environment
         >>> rng = np.random.default_rng(0)
-        >>> data = rng.random((200, 2)) * 100
+        >>> data = rng.random((5000, 2)) * 100
         >>> env = Environment.from_samples(data, bin_size=5.0, name="session1")
         >>> # Translate by (10, 20) cm
         >>> transform = translate(10, 20)

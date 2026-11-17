@@ -209,7 +209,7 @@ class NeuralModel(Protocol):
         >>> from neurospatial import Environment
         >>> import numpy as np
         >>>
-        >>> samples = np.random.default_rng(0).uniform(0, 100, (1000, 2))
+        >>> samples = np.random.default_rng(0).uniform(0, 100, (20000, 2))
         >>> env = Environment.from_samples(samples, bin_size=2.0, units="cm")
         >>> pc = PlaceCellModel(env, center=[50, 50], width=10.0, max_rate=20.0)
         >>> pc.ground_truth["cell_type"]

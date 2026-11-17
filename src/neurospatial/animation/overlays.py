@@ -4743,7 +4743,7 @@ def _convert_overlays_to_data(
     ... )
     >>>
     >>> # Create environment
-    >>> positions_env = np.random.rand(100, 2) * 100
+    >>> positions_env = np.random.rand(1000, 2) * 100
     >>> env = Environment.from_samples(positions_env, bin_size=10.0)
     >>>
     >>> # Create overlay

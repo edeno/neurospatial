@@ -557,7 +557,7 @@ def region_coverage(
     >>> from shapely.geometry import box
     >>>
     >>> # Create environment with wall regions
-    >>> positions = np.random.randn(5000, 2) * 20
+    >>> positions = np.random.uniform(-20, 20, (5000, 2))
     >>> env = Environment.from_samples(positions, bin_size=2.0)
     >>> from neurospatial.regions import Regions
     >>> regions = Regions(env.regions.values())
@@ -577,10 +577,10 @@ def region_coverage(
     >>> coverage = region_coverage(env, field_bins)
     >>> for wall, cov in sorted(coverage.items()):
     ...     print(f"{wall}: {cov:.1%}")  # doctest: +SKIP
-    east: 0.0%
+    east: 10.0%
     north: 100.0%
     south: 0.0%
-    west: 0.0%
+    west: 10.0%
 
     See Also
     --------

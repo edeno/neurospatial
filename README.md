@@ -144,16 +144,11 @@ Here's a minimal example showing how to create an environment from spatial data:
 import numpy as np
 from neurospatial import Environment
 
-# Generate some 2D position data (e.g., from animal tracking)
-# Shape: (n_samples, 2) for x, y coordinates in centimeters
-position_data = np.array([
-    [0.0, 0.0],
-    [5.0, 5.0],
-    [10.0, 10.0],
-    [15.0, 5.0],
-    [20.0, 0.0],
-    # ... more positions
-])
+# 2D position data (e.g., from animal tracking)
+# Shape: (n_samples, 2) for x, y coordinates in centimeters.
+# Here: simulated samples that cover a 40 x 40 cm box.
+rng = np.random.default_rng(0)
+position_data = rng.uniform(0.0, 40.0, size=(5000, 2))
 
 # Create an environment with 2 cm bins
 env = Environment.from_samples(

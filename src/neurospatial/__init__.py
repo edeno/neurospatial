@@ -278,9 +278,9 @@ Create 2D environment and compute shortest path::
 
 Create 3D environment::
 
-    >>> positions_3d = rng.uniform(0, 100, (1000, 3))
+    >>> positions_3d = rng.uniform(0, 100, (20000, 3))
     >>> env_3d = Environment.from_samples(
-    ...     positions_3d, bin_size=5.0,
+    ...     positions_3d, bin_size=10.0,
     ... )
     >>> env_3d = env_3d.with_metadata(units='cm')
     >>> env_3d.n_dims
