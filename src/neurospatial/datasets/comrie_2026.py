@@ -128,7 +128,7 @@ WORKED_RESULT: dict[str, Any] = {
         "available to read"
     ),
     "paper": "no share stated",
-    "ours": 0.924,
+    "ours": 0.923,
     "criterion": (
         "the share of held-out running decoding bins on the rat's own segment "
         "exceeds both a constant decoder naming the segment the rat runs on "

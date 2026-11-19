@@ -160,8 +160,8 @@ WORKED_RESULT: dict[str, Any] = {
         "criterion": (
             "the share of candidates judged replay exceeds the 95th percentile of "
             "the same share with cell identities permuted within each block (20 "
-            "draws, seed 2026: 5.4% to 29.7%, 95th percentile 24.6%); fixed before "
-            "any null ran, and met, by two events of 37 and not above the largest "
+            "draws, seed 2026: 5.4% to 32.4%, 95th percentile 27.3%); fixed before "
+            "any null ran, and met, by one event of 37 and below the largest "
             "draw"
         ),
         "parameters": (

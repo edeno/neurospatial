@@ -4456,7 +4456,7 @@ TIROLE_2022 = ReplayMethod(
         "(r = 0.967). On the paper's RUN candidates of nine sessions (7,002 "
         "track-event pairs, whole event or a half), this method on "
         "neurospatial's decoding finds 89.9% of the code's 1,658 significant "
-        "pairs, and 95.1% of its own 1,567 are the code's; two runs that differ "
+        "pairs, and 95.0% of its own 1,568 are the code's; two runs that differ "
         "only in their shuffles agree on 96.7% to 98.0%. The floors make an "
         "unlikely bin less unlikely, so the code calls a few more events "
         "replay: on one session, with the code's floored maps passed in, 96.6% "
@@ -4583,7 +4583,7 @@ PFEIFFER_FOSTER_2013 = ReplayMethod(
         "our own null, not theirs.",
         "On the one public session (rat 1 day 1, the pfeiffer_2013 dataset), "
         "this preset agrees with Pfeiffer's 110 significant labels of his 322 "
-        "windows on 61.5% of them (kappa 0.113), against 82.0% for "
+        "windows on 61.5% of them (kappa 0.117), against 82.0% for "
         "PFEIFFER_FOSTER_2015: the labels are most likely the 2015 paper's, "
         "and the windows are not this paper's population-burst candidates. "
         "Pinned in tests/datasets/test_pfeiffer_2013.py.",
@@ -4731,9 +4731,17 @@ CAREY_2019 = ReplayMethod(
         "the session's first bin. That session-level filter is not applied "
         "here.",
         "DecodeZ.m uses the 5 ms step as the exposure for the 25 ms counts: "
-        "pass dt=0.005 to follow it. Generate_DecSeqShuf.m smooths spikes with "
-        "a 2 ms Gaussian, which is not applied, since decode_position takes "
-        "whole counts.",
+        "pass dt=0.005 to follow it. MakeQfromS.m smooths each unit's 5 ms "
+        "counts with a Gaussian of 2 ms SD before the sum; decode those "
+        "smoothed counts with fractional_counts=True.",
+        "Two behaviours of DecodeZ.m are not followed. Bins the rat never "
+        "occupied have NaN tuning curves, which nansum turns into a "
+        "likelihood of 1, so a time bin whose occupied bins all score below "
+        "1 decodes to the first unoccupied bin, bin 1 on the paper's tracks; "
+        "here those bins are left out of the prior. "
+        "And a zero rate raised to a smoothed count is 0 however small the "
+        "count, so a spike-density tail of 1e-87 rules a bin out; here such a "
+        "count adds almost nothing, as the Poisson likelihood gives.",
     ),
 )
 
@@ -5515,8 +5523,8 @@ SHIN_2019 = dataclasses.replace(
         "Measured on Shin et al.'s own data (DANDI 000978, rat JS14, the "
         "shin_2019 dataset's worked result): of 735 candidate events at the "
         "reward wells, this recipe calls 180 replay and the lineage code's "
-        "p-value, run on the same joint decodes, 162; 36 are replay only "
-        "here and 18 only there. The causes are its sampling (10,000 samples "
+        "p-value, run on the same joint decodes, 159; 36 are replay only "
+        "here and 15 only there. The causes are its sampling (10,000 samples "
         "in all, split by spike count; R² averaged over 500 draws; each "
         "shuffle drawn once) and its p-value without +1, taken together: the "
         "counts are not split among them. "

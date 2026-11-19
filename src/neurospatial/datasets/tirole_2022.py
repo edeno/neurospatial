@@ -222,7 +222,7 @@ WORKED_RESULT: dict[str, Any] = {
     ),
     "source": f"{_PAPER}, eLife 11:e79031, Results and Figure 3A",
     "paper": 0.05,
-    #: B = 0.0537, R^2 = 0.461, F(1,223) = 190.8, p = 9e-32 over 225 stable
+    #: B = 0.0537, R^2 = 0.461, F(1,223) = 190.5, p = 1e-31 over 225 stable
     #: cells; the authors' code in Octave on the same files gives B = 0.0502,
     #: R^2 = 0.430, F(1,225) = 169.6 over 227.
     "ours": 0.0537,

@@ -49,16 +49,16 @@
 - A second worked result, `olafsdottir_2016.AWAKE_RESULT`, with its criterion
   fixed before the run: `literature_methods.olafsdottir_2017` candidates on the
   track and `OLAFSDOTTIR_2017` judgments, pooled over the deposit's days. It
-  is met: 99 of 325 putative trajectory events (30.5%) on the 10 days are
+  is met: 97 of 325 putative trajectory events (29.8%) on the 10 days are
   replay, against the paper's 38.1% (band 28.1% to 48.1%); the paper's
   97.5th-percentile rule, one shuffle looser than the preset's p < 0.025, calls
   118 (36.3%).
 - `olafsdottir_2016.AWAKE_CONTENT`: the paper's main finding, engaged
   reactivations congruent with the running direction, is not met when each
-  direction is decoded on its own as the Methods describe (44.0% against a
-  chance of 51.4%). That decode names the running direction in 51.3% of running
-  bins; `decode_jointly` names it in 81.3% and gives 63.5% congruent engaged
-  events (the paper 62.26%), but disengaged events are as congruent (60.5%).
+  direction is decoded on its own as the Methods describe (43.3% against a
+  chance of 50.5%). That decode names the running direction in 50.4% of running
+  bins; `decode_jointly` names it in 81.3% and gives 63.8% congruent engaged
+  events (the paper 62.26%), but disengaged events are as congruent (60.6%).
 - `R2192-2014-10-01` loads with a warning: a rest tetrode file in the deposit
   is zero-filled from inside one spike to its end. The load keeps the spikes
   before the zeros. No unit loses spikes, but `rec.marks` has no spikes on that
@@ -91,7 +91,7 @@
   spikes overlaps 272 of his 322 windows and 291 of its 402 overlap his (the
   LFP detectors cannot run: the file has no LFP). On his windows,
   `PFEIFFER_FOSTER_2015` agrees with his labels on 82.0% (kappa 0.569) and
-  `PFEIFFER_FOSTER_2013` on 61.5% (kappa 0.113). The worked result, fixed
+  `PFEIFFER_FOSTER_2013` on 61.5% (kappa 0.117). The worked result, fixed
   beforehand (80% agreement and kappa 0.6), is not met; the presets' notes
   give these numbers.
 
@@ -145,7 +145,7 @@
   (its outputs in `tests/data/tirole_2022/`): `ripple_detection`'s
   `tirole_2022` finds 99.96% of the authors' candidate events with the file's
   own speed and 80.4% with the recording's; `TIROLE_2022` finds 89.9% of their
-  significant replays and 95.1% of ours are theirs, against 96.7-98.0% for two
+  significant replays and 95.0% of ours are theirs, against 96.7-98.0% for two
   runs that differ only in shuffles, the rest being neurospatial's decoding
   (no rate floors, unvisited bins left out). Worked result, reproduced: the
   Figure 3A RUN regression gives B = 0.0537, R² = 0.461 over 225 stable cells
@@ -216,7 +216,7 @@
   tetrodes) and the SWR counts measured without the detector's 15 ms minimum.
 - `SHIN_2019`'s notes give how the Jadhav lab's line-fit p-value changes its
   verdicts on the same candidates: on JS14, 36 events are replay only for the
-  recipe and 18 only for the lab code.
+  recipe and 15 only for the lab code.
 
 ### Documentation: measured false-positive rates of published nulls
 
@@ -1237,8 +1237,8 @@ give the measured rates:
   `rec.params["sequence_tracks"]`, each sequence's linear path. The worked
   result does not reproduce the paper: the archive's one LFP channel, clipped in
   the file, passes 37 candidate events where the paper has 278 on the default
-  set. Of them 11 are judged replay (29.7%), above the 24.6% that permuting cell
-  identities gives at its 95th percentile, by two events and not firmly. The
+  set. Of them 11 are judged replay (29.7%), above the 27.3% that permuting cell
+  identities gives at its 95th percentile, by one event and not firmly. The
   low count is not caused by the clipping; the channel itself is the likelier
   cause (inferred). Planted replay is judged 18.6% of the time, so the share is
   not a rate of replay.
@@ -1284,8 +1284,8 @@ give the measured rates:
   test against chance on the route of the paper's code where it differs from the
   text (5 cm/s, an exposure of 5 ms, a 2 ms spike density, 111 bins per trajectory,
   sequences over the whole session): 41 sequences on those candidates, above the
-  shifted-spike null (95th percentile 8.0) and not above the shifted-maps null
-  (52.35), so its fixed criterion is not met. Planted replay is judged 5.8% of the
+  shifted-spike null (95th percentile 8.1) and not above the shifted-maps null
+  (55.45), so its fixed criterion is not met. Planted replay is judged 6.1% of the
   time, so that count
   is not a rate of replay. Over the paper's 19 sessions the left share differs by
   restriction as in the paper, and as much with shifted rate maps, and it follows

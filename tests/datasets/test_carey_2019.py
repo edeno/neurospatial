@@ -74,10 +74,10 @@ MAX_JUMP_CM, N_EDGES = 40.0, 112
 #: The worked result: sequences left and right on our candidates and the
 #: paper's; events a sequence overlaps, on one side or the other only; and
 #: each null's range and 95th percentile.
-OURS_SEQUENCES, PAPER_SEQUENCES = (9, 32), (11, 34)
-OURS_EVENTS = (60, 8, 31)
-FITTED_RANGE, FITTED_P95 = (18, 59), 52.35
-MOVED_RANGE, MOVED_P95 = (0, 8), 8.0
+OURS_SEQUENCES, PAPER_SEQUENCES = (11, 30), (12, 33)
+OURS_EVENTS = (60, 10, 30)
+FITTED_RANGE, FITTED_P95 = (19, 64), 55.45
+MOVED_RANGE, MOVED_P95 = (0, 10), 8.1
 
 KEYS = """
 ExpKeys.RestrictionType = 'food'; % note, 'what' was *withheld*

@@ -657,7 +657,7 @@ def test_replay_on_the_one_channel_pins_the_attempt():
 
     Fixed before any null ran: the share of candidates judged replay must exceed
     the 95th percentile of the same share with cell identities permuted. It does,
-    by two events, and ``WORKED_RESULT`` says why that is not firm. This pins the
+    by one event, and ``WORKED_RESULT`` says why that is not firm. This pins the
     numbers, so a change to the detector, the loader or the preset that moves them
     fails here.
     """
@@ -669,7 +669,7 @@ def test_replay_on_the_one_channel_pins_the_attempt():
     assert (n_events, replays) == (37, 11)
     assert record["attempted"]["value"] == round(replays / n_events, 3)
     bar = float(np.percentile(null, 95))
-    assert round(bar, 3) == 0.246
+    assert round(bar, 3) == 0.273
     assert replays / n_events > bar
 
     # Reported beside it: the same bursts without the SWR requirement.

@@ -163,7 +163,7 @@ pass the paper's two inputs to `Carey_candidate_detector` as
 ## Worked result
 
 **Status: tested against chance (level B). Not met: 41 sequences against a null 95th
-percentile of 52.35.** This check finds 5.8% of planted replay in this session, so it
+percentile of 55.45.** This check finds 6.1% of planted replay in this session, so it
 cannot show whether these events hold replay. It tests the detection and decoder, and
 it is not a number of the paper, which states no count for one session.
 
@@ -194,27 +194,27 @@ The count moved to sequences before this count was seen, with the same draws and
 seeds. Event counts of an earlier route at 4 cm/s had been seen by then. The spike
 density was added later, once `decode_position` could take it, and written down before
 it ran. By then the count without it had been seen: 43 against 45.6, also not met. The
-criterion, nulls and draws did not change.
+criterion, nulls and draws did not change. Every count on this page was measured again
+when `decode_position` stopped raising rates below 1e-10 Hz (see
+[Against the authors' code](#against-the-authors-code)).
 
 | | Sequences | 95th percentile, 20 draws |
 | --- | --- | --- |
-| Our 1,328 candidates | 41 (9 left, 32 right) | |
-| Maps fitted with each unit's spikes shifted | 18 to 59, median 38 | 52.35 |
-| Decoded spikes all shifted by one offset | 0 to 8 | 8.0 |
-| The paper's 1,654 candidates | 45 (11 left, 34 right) | 64.5 and 9.0 |
+| Our 1,328 candidates | 41 (11 left, 30 right) | |
+| Maps fitted with each unit's spikes shifted | 19 to 64, median 39 | 55.45 |
+| Decoded spikes all shifted by one offset | 0 to 10 | 8.1 |
+| The paper's 1,654 candidates | 45 (12 left, 33 right) | 67.65 and 9.05 |
 
 The criterion is not met. The count exceeds the second null and not the first, on
 our candidates and on the paper's. The first null keeps each event's burst and
 breaks only which place each cell codes, so a count of this size is what these fixed
 rules give without that code: a 50 ms sequence is about two independent 25 ms
-windows. The old count, candidates that a sequence overlaps before the two sides are
-compared, is 60 here, just above both 95th percentiles for that count, 59.65 and 10.05.
-The criterion now asks about sequences, the count the paper makes.
+windows. The criterion asks about sequences, the count the paper makes.
 
 Against the paper: Supplementary Fig. 6 gives 429 sequences for R050's six sessions,
-with no figure per session. Here the 41 are 9 left and 32 right, a left share of
-0.22 on a food-restricted day, where the paper's mean over food-restricted sessions
-is 0.35. The first null gives a median of 0.34, so this one session says nothing
+with no figure per session. Here the 41 are 11 left and 30 right, a left share of
+0.27 on a food-restricted day, where the paper's mean over food-restricted sessions
+is 0.35. The first null gives a median of 0.33, so this one session says nothing
 about that finding.
 
 **What the number can say.** We planted replay into each of the 1,328 candidates,
@@ -224,13 +224,13 @@ path played 15 times faster. Each was then judged by the route above.
 
 | Planted into the 1,328 candidates, each side | Judged replay |
 | --- | --- |
-| Sweep along a path | 155 of 2,656, 5.8% |
-| Stays in one place | 175 of 2,656, 6.6% |
-| No position content | 93 of 2,656, 3.5% |
+| Sweep along a path | 161 of 2,656, 6.1% |
+| Stays in one place | 156 of 2,656, 5.9% |
+| No position content | 112 of 2,656, 4.2% |
 
-Before the two sides are compared the sweep is 9.9%: a planted sequence that also
-decodes on the other side is removed. Recall depends on length: 0.1% of sweeps under
-60 ms are judged (2 of 1,440), 7.1% from 60 to 90 ms, and 24.2% at 90 ms or more (94
+Before the two sides are compared the sweep is 9.6%: a planted sequence that also
+decodes on the other side is removed. Recall depends on length: 0.3% of sweeps under
+60 ms are judged (5 of 1,440), 7.1% from 60 to 90 ms, and 25.0% at 90 ms or more (97
 of 388). The path stays inside the candidate, the median candidate is under 60 ms,
 and the rule needs 50 ms of it, so a real sequence that runs past its candidate's
 ends is not what this measures. This judge passes about one known replay in twenty
@@ -249,27 +249,64 @@ holds the numbers, and a test pins the observed ones.
 
 | | R042 | R044 | R050 | R064 |
 | --- | --- | --- | --- | --- |
-| Sequences here | 1,196 | 90 | 391 | 1,842 |
+| Sequences here | 1,237 | 97 | 405 | 1,922 |
 | The paper's sequences (Supplementary Fig. 6) | 1,257 | 95 | 429 | 1,999 |
-| Events with a sequence on one side, the old count | 1,134 | 89 | 378 | 1,767 |
+| Events with a sequence on one side, the old count | 1,169 | 96 | 397 | 1,843 |
 
-In all 3,519 against the paper's 3,780, without the step named above. With each
-unit's spikes shifted before fitting the maps, the same total is 2,854 to 3,407 over
-20 draws, median 3,086. So it is above every draw, but most of it is what the rules
-find anyway. Three of the 19 sessions pass the 95th percentile of their own null.
+In all 3,661 against the paper's 3,780, without the step named above. With each
+unit's spikes shifted before fitting the maps, the same total is 2,742 to 3,779 over
+20 draws, median 3,208, and one draw reaches the observed total. So most of it is
+what the rules find anyway. Three of the 19 sessions pass the 95th percentile of
+their own null.
 
 The left share looks like the paper's main finding and is not a reproduction of it.
-It is 0.37 on food-restricted days and 0.58 on water-restricted days (the paper: 0.35
-and 0.57), z = -2.58 with the labels permuted, and it correlates -0.66 with the share
+It is 0.36 on food-restricted days and 0.59 on water-restricted days (the paper: 0.35
+and 0.57), z = -2.76 with the labels permuted, and it correlates -0.70 with the share
 of left trials (the paper: -0.54). But the shifted maps give the same difference: a
-median of -0.258 against the observed -0.207, and 16 of 20 draws reach it. The left
-share follows the share of kept units on the left (r = 0.89; 44% on food days, 54% on
+median of -0.262 against the observed -0.227, and 17 of 20 draws reach it. The left
+share follows the share of kept units on the left (r = 0.91; 44% on food days, 54% on
 water days), and this analysis keeps units per side as the paper's code does. Why the
 kept units follow the restriction was not established. So this analysis cannot tell
 that shift from a bias of the decoder.
 
 All of this is measured on our analysis. This page does not assess the paper's own
 finding.
+
+## Against the authors' code
+
+The authors' MATLAB code runs in Octave (`scripts/reproductions/carey_2019`, with a
+README). Without the identity-shuffle filter it finds 3,657 sequences on the paper's
+candidates in the 19 sessions, against the paper's 3,780. A line-by-line Python port,
+`tests/datasets/carey_authors_route.py`, reproduces every one of them, and a realdata
+test checks this. The port lets each step be swapped for neurospatial's on the same
+preprocessing: the same units, tuning curves, smoothed counts and decoded rows.
+
+| Route, on the paper's candidates in 19 sessions | Sequences | Identical to the code without the tie | The tie-free code's sequences overlapped |
+| --- | --- | --- | --- |
+| The authors' code | 3,657 | 2,693 | 2,889 of 3,758 (77%) |
+| The authors' code, bin-1 tie removed | 3,758 | all | all |
+| `decode_position` and `replay_segments` | 3,628 | 2,941 | 3,218 of 3,758 (86%) |
+
+The first two rows differ by a bug in the code. A position bin the rat never occupied
+has a NaN tuning curve, and `DecodeZ.m`'s `nansum` gives it a likelihood of exactly 1.
+So a time bin whose occupied bins all score below 1 decodes to the first unoccupied
+bin, bin 1. Neurospatial leaves unoccupied bins out of the prior instead.
+
+Between the last two rows the decoders agree in 97.5% and 98.0% of rows (left and
+right, R050-2014-03-29). Every row where they differ, 769 left and 897 right, has the
+same cause. An active cell has exactly zero rate at neurospatial's MAP bin, and its
+count there is only the tail of the 2 ms spike density, a median of 1e-87 (left) and
+3e-67 (right). `DecodeZ.m` raises the rate to the count, and `0 ^ 1e-87` is 0, so
+that bin is ruled out. In the Poisson likelihood a
+count that small adds almost nothing, and neurospatial decodes it that way. On this
+session the sequence step agrees too: `replay_segments` and `DecSeqDetectZ.m` find
+the same sequences of 50 ms or more on the same MAP.
+
+`decode_position` used to raise every rate below 1e-10 Hz to 1e-10 Hz. That changed
+39% of these tuning curves' cell-bin rates, since a Gaussian-smoothed field falls far
+below 1e-10 Hz away from its peak. With that floor, the last row was 3,307 sequences,
+1,699 identical and 63% overlapped. Now the floor only replaces exact zeros, so the
+decoder uses the rates it is given.
 
 ## Cite
 

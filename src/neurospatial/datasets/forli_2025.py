@@ -203,7 +203,7 @@ OWN_3D_ANALYSIS: dict[str, Any] = {
         "our choice: the published 20 and 40 cm scaled from a 2 m arena to "
         "this 5.8 m room, rounded"
     ),
-    "held_out_flights": {"median_error_m": 2.197, "shuffled_error_m": 2.380},
+    "held_out_flights": {"median_error_m": 2.196, "shuffled_error_m": 2.374},
     "planted_recall": {
         "judged": 1,
         "planted": 300,

@@ -107,7 +107,7 @@ animal" (Introduction). The preprint states no share to compare with.
 
 | | Value |
 | --- | --- |
-| Ours | 92.4% of held-out running decoding bins have the MAP bin on the rat's own segment |
+| Ours | 92.3% of held-out running decoding bins have the MAP bin on the rat's own segment |
 | Paper | no share stated |
 | Criterion (fixed before the run) | the share exceeds both a constant decoder that names the segment the rat runs on most (35.1% of those bins) and the 95th percentile of the same share after shifting every unit's spikes by one common circular offset (20 draws, seed 2026: 18.1% to 29.4%, 95th percentile 28.1%) |
 

@@ -239,7 +239,7 @@ CANDIDATE_BASELINE: dict[str, Any] = {
             "judged": 6,
             "null_judged": ((4, 1922), (4, 1896), (3, 1904)),
             "survivors_judged": 0,
-            "survivors_with_segment": 214,
+            "survivors_with_segment": 213,
             "first_100_real": (1, 56),
             "first_100_null_0": (0, 37),
         },

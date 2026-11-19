@@ -149,7 +149,7 @@ package's presets, unmodified:
 | Preset | Judged | Both | Ours only | His only | Neither | Agreement | Kappa |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `PFEIFFER_FOSTER_2015` | 78 | 65 | 13 | 45 | 199 | 82.0% | 0.569 |
-| `PFEIFFER_FOSTER_2013` | 94 | 40 | 54 | 70 | 158 | 61.5% | 0.113 |
+| `PFEIFFER_FOSTER_2013` | 96 | 41 | 55 | 69 | 157 | 61.5% | 0.117 |
 
 The 2015 rule fits his labels far better than the 2013 rule, as expected if
 they are 2015's. Its misses are of one kind: 43 of the 45 windows he labels

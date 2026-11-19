@@ -197,7 +197,7 @@ each block (20 draws, seed 2026). **It was met, narrowly, and this is not firm.*
 | | Candidates | Replays | Share | Permuted cells, 95th percentile |
 | --- | --- | --- | --- | --- |
 | Paper, `rat2_set2` (Table S1) | 278 | 153 | 55.0% | |
-| Ours, the paper's recipe | 37 | 11 | 29.7% | 24.6% |
+| Ours, the paper's recipe | 37 | 11 | 29.7% | 27.3% |
 | Ours, the same bursts with no SWR requirement | 534 | 147 | 27.5% | 20.1% |
 | Paper, all 25 sets | 2,573 | 1,342 | 52.2% | |
 | Ours, the paper's recipe, all 25 sets | 187 | 42 | 22.5% | not run |
@@ -206,8 +206,8 @@ each block (20 draws, seed 2026). **It was met, narrowly, and this is not firm.*
 Only the second row is the attempt. The others are the paper's numbers and
 diagnostics, stated beside it and not part of the criterion.
 
-**Why the verdict is not firm.** The share clears the bar by two events of 37, and it
-equals the largest of the 20 draws. With 200 draws the 95th percentile is 27.0%, and
+**Why the verdict is not firm.** The share clears the bar by one event of 37, and one
+of the 20 draws is above it (32.4%). With 200 draws the 95th percentile is 27.0%, and
 6 draws reach 29.7%. Adding one more window at each event's end, which holds only
 spikes the window before already holds, gives 8 of 37 (21.6%, against 29.9%), which
 fails. Over the 25 sets the same extra window gives 39 and 1,063 where the table has

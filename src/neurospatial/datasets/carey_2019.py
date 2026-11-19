@@ -220,19 +220,20 @@ WORKED_RESULT: dict[str, Any] = {
     ),
     "ours": 0.031,
     "criterion": (
-        "not met. 41 sequences (9 left, 32 right), 0.031 per candidate, remain on "
+        "not met. 41 sequences (11 left, 30 right), 0.031 per candidate, remain on "
         "the 1,328 candidates, and the criterion asks that they exceed the 95th "
         "percentile of each null (20 draws, seed 2026). They do not exceed the "
         "first: rate maps fitted on spikes with each unit shifted by its own "
-        "offset within the task give 18 to 59 sequences, median 38, 95th "
-        "percentile 52.35. They exceed the second: decoded spikes all shifted by "
-        "one offset over the recording give 0 to 8, 95th percentile 8.0. The "
+        "offset within the task give 19 to 64 sequences, median 39, 95th "
+        "percentile 55.45. They exceed the second: decoded spikes all shifted by "
+        "one offset over the recording give 0 to 10, 95th percentile 8.1. The "
         "criterion was fixed for events before any decode, and moved to sequences "
         "before this count was seen, to follow the paper's code; the event "
         "counts of an earlier route at 4 cm/s had been seen. The spike density "
         "was added later, written down before it ran, after the count without "
-        "it was seen: 43 against 45.6, also not met. Events that an eligible "
-        "sequence overlaps number 60, against 95th percentiles of 59.65 and 10.05"
+        "it was seen: 43 against 45.6, also not met. The counts were measured "
+        "again when decode_position stopped raising rates below 1e-10 Hz, with the "
+        "same criterion, nulls and draws"
     ),
     "parameters": (
         "literature_methods.carey_2019 at ripple_detection 0eddae64 as packaged, "
@@ -268,22 +269,22 @@ WORKED_RESULT: dict[str, Any] = {
         "the detection differs, and its gates are those of the packaged method "
         "(about 4 cm/s; the code's 10 pixels/s is 3.4 to 4.2 cm/s by axis and "
         "rat): see the page's validation. On the paper's own 1,654 candidates "
-        "the same analysis gives 45 sequences (11 left, 34 right), against 95th "
-        "percentiles of 64.5 and 9.0",
+        "the same analysis gives 45 sequences (12 left, 33 right), against 95th "
+        "percentiles of 67.65 and 9.05",
     ),
     "attempted": None,
     "why": None,
     "planted_recall": {
-        "judged": 155,
+        "judged": 161,
         "planted": 2656,
         "reading": (
             "replay planted into the 1,328 candidates, once on each trajectory, "
             "keeping every spike's time and drawing its cell from these rate maps "
             "along a real running path played 15 times faster, is judged replay "
-            "5.8% of the time, or 9.9% before the two sides are compared, since a "
+            "6.1% of the time, or 9.6% before the two sides are compared, since a "
             "planted sequence that also decodes on the other side is removed. "
-            "Events with no content pass 3.5% and events that stay in one place "
-            "6.6%. It depends on the event's length: 0.1% under 60 ms and 24.2% at "
+            "Events with no content pass 4.2% and events that stay in one place "
+            "5.9%. It depends on the event's length: 0.3% under 60 ms and 25.0% at "
             "90 ms or more, since the path stays inside the candidate and the rule "
             "needs 50 ms of it. So this judge passes about one known replay in "
             "twenty here, the real candidates' 3.1% is no more than events with no "
@@ -300,7 +301,7 @@ WORKED_RESULT: dict[str, Any] = {
 #: label permutation and the null were fixed after the counts of an earlier route
 #: were seen. No criterion attaches. The left share is not a reproduction of the
 #: paper's shift: it differs by restriction as much with shifted rate maps, and
-#: follows the share of units kept on each side (r = 0.90). This analysis cannot
+#: follows the share of units kept on each side (r = 0.91). This analysis cannot
 #: tell that shift from a bias. All of this is measured on this analysis; it does
 #: not assess the paper's own finding.
 ACROSS_SESSIONS: dict[str, Any] = {
@@ -309,25 +310,25 @@ ACROSS_SESSIONS: dict[str, Any] = {
         "sessions, on its own candidates, with its identity-shuffle filter not "
         "applied"
     ),
-    "sequences_per_rat": {"R042": 1196, "R044": 90, "R050": 391, "R064": 1842},
+    "sequences_per_rat": {"R042": 1237, "R044": 97, "R050": 405, "R064": 1922},
     "paper_per_rat": {"R042": 1257, "R044": 95, "R050": 429, "R064": 1999},
-    "one_side_events_per_rat": {"R042": 1134, "R044": 89, "R050": 378, "R064": 1767},
-    "left_share_food": 0.369,
-    "left_share_water": 0.576,
+    "one_side_events_per_rat": {"R042": 1169, "R044": 96, "R050": 397, "R064": 1843},
+    "left_share_food": 0.361,
+    "left_share_water": 0.588,
     "paper_left_share": (0.35, 0.57),
-    "label_permutation": {"z": -2.58, "p": 0.0059, "n": 10000, "seed": 2026},
-    "r_with_left_trials": -0.66,
+    "label_permutation": {"z": -2.76, "p": 0.0023, "n": 10000, "seed": 2026},
+    "r_with_left_trials": -0.7,
     "paper_r_with_behavior": -0.54,
-    "left_share_follows_kept_units_r": 0.89,
+    "left_share_follows_kept_units_r": 0.91,
     "null_own_offsets": {
         "draws": 20,
         "seed": 2026,
-        "difference_observed": -0.207,
-        "difference_median": -0.258,
-        "difference_range": (-0.418, -0.136),
-        "draws_at_or_beyond_observed": 16,
-        "sequences_total_observed": 3519,
-        "sequences_total_range": (2854, 3407),
+        "difference_observed": -0.227,
+        "difference_median": -0.262,
+        "difference_range": (-0.407, -0.114),
+        "draws_at_or_beyond_observed": 17,
+        "sequences_total_observed": 3661,
+        "sequences_total_range": (2742, 3779),
         "sessions_above_95th_percentile": 3,
     },
 }

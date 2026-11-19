@@ -328,7 +328,7 @@ Fixed in writing before any candidate event on a track was detected or judged
   cells' outbound and inbound maps over all runs decode each run with its own
   direction's maps; the error is the distance along the track from the most
   probable bin to the rat, in bins where it runs faster than 10 cm/s. All 10
-  days pass, at 5.2 to 21.7 cm. (`R2192-2014-10-01` entered after the first
+  days pass, at 5.1 to 22.1 cm. (`R2192-2014-10-01` entered after the first
   run, once the reader kept the spikes before its zero-filled file: the rule
   was every day the deposit's files can be read for, so the analysis did not
   change.)
@@ -364,13 +364,13 @@ Fixed in writing before any candidate event on a track was detected or judged
 
 ### Results
 
-**Criterion A is met: 99 of 325 trajectory events (30.5%) are judged replay**,
+**Criterion A is met: 97 of 325 trajectory events (29.8%) are judged replay**,
 inside 28.1% to 48.1%, though near its lower edge.
 
 | Pooled over 10 days | Engaged | Disengaged | Pooled | Paper |
 | --- | --- | --- | --- | --- |
 | Putative trajectory events | 63 | 262 | 325 | 404, 943, 1,347 |
-| Judged replay by `OLAFSDOTTIR_2017` | 19 (30.2%) | 80 (30.5%) | 99 (30.5%) | 36.88%, 38.60%, 38.1% |
+| Judged replay by `OLAFSDOTTIR_2017` | 19 (30.2%) | 78 (29.8%) | 97 (29.8%) | 36.88%, 38.60%, 38.1% |
 | By the paper's rule, at most 2 of 100 shuffles as high | 24 (38.1%) | 94 (35.9%) | 118 (36.3%) | |
 
 As in the paper, the engaged and disengaged shares are close. Two differences
@@ -379,7 +379,7 @@ from the paper are measured here:
 - **The threshold.** The paper calls an event replay when its score exceeds the
   97.5th percentile of its 100 shuffles, which allows 2 shuffles as high;
   `OLAFSDOTTIR_2017` takes p = (k + 1) / (n + 1) < 0.025, which allows 1. The
-  paper's rule calls 19 more events replay, 36.3% of the 325.
+  paper's rule calls 21 more events replay, 36.3% of the 325.
 - **Fewer events.** 325 putative trajectory events on 10 days, against the
   paper's 1,347 on 24 sessions. The rat must stay below 3 cm/s through an event,
   and by `compute_speed`'s default (0.1 s smoothing) the head LED is that slow
@@ -388,27 +388,27 @@ from the paper are measured here:
   estimated speed.
 
 **Criterion B is not met.** Decoded as the Methods describe, engaged
-reactivations are congruent in 124 of 282 (44.0%), against a cell-ID shuffle
-chance of 51.4% (0.8% of resamples above chance), and disengaged ones in 515 of
-994 (51.8%, chance 49.1%).
+reactivations are congruent in 122 of 282 (43.3%), against a cell-ID shuffle
+chance of 50.5% (0.85% of resamples above chance), and disengaged ones in 519 of
+994 (52.2%, chance 48.2%).
 
 The cause is the decode, not the data. Each direction's posterior sums to 1 on
 its own, so comparing arms across the two cannot say which direction the spikes
 match. On the default day's runs, the same rule names the direction the rat is
-running in 1,315 of 2,564 bins of 500 ms (51.3%, a coin's rate);
+running in 1,292 of 2,564 bins of 500 ms (50.4%, a coin's rate);
 `neurospatial.decoding.decode_jointly`, one posterior over both directions'
 maps, names it in 2,084 (81.3%). Decoded jointly, which was not fixed before the
 run:
 
 | Reactivation events, pooled | Engaged | Disengaged |
 | --- | --- | --- |
-| Congruent | 179 of 282 (63.5%) | 601 of 994 (60.5%) |
-| Cell-ID shuffle chance | 50.1% | 52.6% |
+| Congruent | 180 of 282 (63.8%) | 602 of 994 (60.6%) |
+| Cell-ID shuffle chance | 49.6% | 52.3% |
 | Resamples above chance | 100% | 100% |
 | The paper | 62.26% | 52.19% |
 
 The engaged share matches the paper's, but disengaged events are as congruent
-(81.4% of resampled engaged-minus-disengaged differences above 0), where the
+(83.7% of resampled engaged-minus-disengaged differences above 0), where the
 paper found no bias. Whether the paper decoded the two directions together is
 not stated; its Methods say "two posterior probability matrices were generated
 for each event".

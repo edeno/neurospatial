@@ -1242,12 +1242,12 @@ def _congruence(days, key):
 #: and median running decoding error, cm. Every one is within 30 cm, so all 10
 #: enter.
 MEASURED_DAYS_2017 = {
-    "R2142-2014-08-06": (28, 13.87),
+    "R2142-2014-08-06": (28, 13.94),
     "R2192-2014-09-17": (67, 5.15),
-    "R2192-2014-10-01": (70, 5.37),
+    "R2192-2014-10-01": (70, 5.41),
     "R2217-2014-12-13": (55, 6.97),
-    "R2217-2014-12-18": (36, 11.44),
-    "R2335-2015-10-26": (26, 21.72),
+    "R2217-2014-12-18": (36, 11.56),
+    "R2335-2015-10-26": (26, 22.15),
     "R2336-2015-11-01": (52, 7.96),
     "R2336-2015-11-04": (61, 6.62),
     "R2337-2015-11-27": (49, 8.81),
@@ -1257,22 +1257,22 @@ MEASURED_DAYS_2017 = {
 #: preset (p < 0.025), those the paper's rule calls replay (a score above the
 #: 97.5th percentile of 100 shuffles: at most 2 as high, p <= 3 / 101), and the
 #: putative events.
-MEASURED_TRAJECTORY_2017 = {"engaged": (19, 24, 63), "disengaged": (80, 94, 262)}
+MEASURED_TRAJECTORY_2017 = {"engaged": (19, 24, 63), "disengaged": (78, 94, 262)}
 #: Pooled over the days, per section: (congruent, events, chance, share of
 #: resamples above chance), and the share of resampled differences above 0.
 MEASURED_CONGRUENCE_2017 = {
-    "engaged": (124, 282, 0.5138, 0.008),
-    "disengaged": (515, 994, 0.4913, 0.9537),
-    "difference": 0.0104,
+    "engaged": (122, 282, 0.5045, 0.0085),
+    "disengaged": (519, 994, 0.4818, 0.9934),
+    "difference": 0.0047,
 }
 MEASURED_CONGRUENCE_JOINT_2017 = {
-    "engaged": (179, 282, 0.5009, 1.0),
-    "disengaged": (601, 994, 0.5256, 1.0),
-    "difference": 0.8141,
+    "engaged": (180, 282, 0.4962, 1.0),
+    "disengaged": (602, 994, 0.5234, 1.0),
+    "difference": 0.8367,
 }
 #: On the default day's runs: (bins naming the running direction, bins with
 #: spikes), each direction decoded on its own and both decoded jointly.
-DIRECTION_READ_2017 = ((1315, 2564), (2084, 2564))
+DIRECTION_READ_2017 = ((1292, 2564), (2084, 2564))
 
 
 @pytest.fixture(scope="module")

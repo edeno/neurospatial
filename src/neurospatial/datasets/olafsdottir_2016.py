@@ -345,17 +345,17 @@ AWAKE_RESULT: dict[str, Any] = {
         "38.1% pooled: 149 of 404 engaged and 364 of 943 disengaged (404 and 943 "
         "inferred: the only counts that give 36.88% and 38.60% to the hundredth)"
     ),
-    "ours": 0.305,
+    "ours": 0.298,
     "criterion": (
-        "met. 99 of 325 putative trajectory events (30.5%) pooled over the 10 "
+        "met. 97 of 325 putative trajectory events (29.8%) pooled over the 10 "
         "deposit days are judged replay, and the criterion, fixed in writing "
         "before any track candidate was detected, asks for 28.1% to 48.1%, "
         "within 10 points of the paper's pooled 38.1%. Engaged 19 of 63 "
-        "(30.2%), disengaged 80 of 262 (30.5%)"
+        "(30.2%), disengaged 78 of 262 (29.8%)"
     ),
     "parameters": (
         "every deposit day (the paper's inclusion, a median running decoding "
-        "error of 30 cm or less in 500 ms bins, passes all 10: 5.2 to 21.7 "
+        "error of 30 cm or less in 500 ms bins, passes all 10: 5.1 to 22.1 "
         "cm). Place cells: CA1 units with a field of 20 cm or more above "
         "their mean track rate and a peak above 1 Hz in the outbound or inbound "
         "map (2 cm bins, above 10 cm/s, Gaussian sigma 10 cm, ends and corners "
@@ -405,31 +405,31 @@ AWAKE_CONTENT: dict[str, Any] = {
         "test); not met"
     ),
     "as_the_methods_describe": {
-        "engaged": (124, 282),
-        "disengaged": (515, 994),
-        "chance": {"engaged": 0.5138, "disengaged": 0.4913},
-        "above_chance": {"engaged": 0.008, "disengaged": 0.9537},
-        "engaged_above_disengaged": 0.0104,
+        "engaged": (122, 282),
+        "disengaged": (519, 994),
+        "chance": {"engaged": 0.5045, "disengaged": 0.4818},
+        "above_chance": {"engaged": 0.0085, "disengaged": 0.9934},
+        "engaged_above_disengaged": 0.0047,
     },
     "decoded_jointly": {
-        "engaged": (179, 282),
-        "disengaged": (601, 994),
-        "chance": {"engaged": 0.5009, "disengaged": 0.5256},
+        "engaged": (180, 282),
+        "disengaged": (602, 994),
+        "chance": {"engaged": 0.4962, "disengaged": 0.5234},
         "above_chance": {"engaged": 1.0, "disengaged": 1.0},
-        "engaged_above_disengaged": 0.8141,
+        "engaged_above_disengaged": 0.8367,
     },
-    "direction_while_running": {"separately": (1315, 2564), "jointly": (2084, 2564)},
+    "direction_while_running": {"separately": (1292, 2564), "jointly": (2084, 2564)},
     "cause": (
         "the Methods decode each event once with the outbound and once with the "
         "inbound maps, each posterior summing to 1, and take the arm of the six "
         "with the most probability. Two posteriors normalized apart cannot say "
         "which direction the spikes match: on the default day's runs the rule "
-        "names the running direction in 1,315 of 2,564 500 ms bins (51.3%), and "
+        "names the running direction in 1,292 of 2,564 500 ms bins (50.4%), and "
         "decode_jointly, one posterior over both directions, in 2,084 (81.3%). "
         "Decoded jointly (not fixed before the run), engaged events are "
-        "congruent in 179 of 282 (63.5%, the paper 62.26%) against a chance of "
-        "50.1%, and disengaged events in 601 of 994 (60.5%, the paper 52.19%) "
-        "against 52.6%: both above chance, the two not different"
+        "congruent in 180 of 282 (63.8%, the paper 62.26%) against a chance of "
+        "49.6%, and disengaged events in 602 of 994 (60.6%, the paper 52.19%) "
+        "against 52.3%: both above chance, the two not different"
     ),
 }
 

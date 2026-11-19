@@ -197,7 +197,7 @@ pairs of the nine sessions:
 
 | | Authors' significant | Ours | Both | Authors' we find | Ours they have |
 | --- | --- | --- | --- | --- | --- |
-| each track | 1,658 | 1,567 | 1,490 | 89.9% | 95.1% |
+| each track | 1,658 | 1,568 | 1,490 | 89.9% | 95.0% |
 | after one track is chosen per event | 1,409 | 1,378 | 1,296 | 92.0% | 94.0% |
 
 Two runs that differ only in their shuffles agree on 96.7% to 98.0% of their
@@ -218,7 +218,7 @@ the code:
 
 With those three steps reproduced, the stored weighted correlations come back
 to within 1e-6 for 99.75% of the default session's 806 track-event pairs;
-neurospatial's decoding gives 72.5% of the 805 with a defined score within 0.01 (r = 0.967). `TIROLE_2022` now
+neurospatial's decoding gives 72.5% of the 804 with a defined score within 0.01 (r = 0.967). `TIROLE_2022` now
 requires 5 time bins, as the code scores an event or a half, where it required
 5 active cells, which the code applies when it selects candidates.
 
@@ -240,7 +240,7 @@ the laps on both tracks) and least squares:
 | --- | --- | --- | --- | --- |
 | Paper (10 sessions) | 270 | 0.05 | 0.41 | F(1,268) = 186 |
 | Authors' code in Octave (9 sessions) | 227 | 0.0502 | 0.430 | F(1,225) = 169.6 |
-| Ours (9 sessions) | 225 | 0.0537 | 0.461 | F(1,223) = 190.8 |
+| Ours (9 sessions) | 225 | 0.0537 | 0.461 | F(1,223) = 190.5 |
 
 The Python chain run on the authors' own significant events gives the Octave
 row exactly (the same 227 cells), so the remaining difference is our judging.

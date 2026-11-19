@@ -636,7 +636,7 @@ DETECTION = {
     "file": (19660, 19558, 19550, 19554),
 }
 #: (pairs, authors' significant, ours, both) over the nine sessions.
-JUDGING = (7002, 1658, 1567, 1490)
+JUDGING = (7002, 1658, 1568, 1490)
 #: The same on the default session, on the package's maps and on the floored ones.
 JUDGING_DEFAULT = {
     "package": (806, 204, 199, 191),
@@ -670,7 +670,7 @@ def test_judging_agrees_with_the_authors_within_shuffle_noise():
 
     A pair is a gated RUN candidate on one track; it is replay when the whole
     event or a half passes. Of the authors' 1,658 significant pairs we find
-    1,490 (89.9%), and 95.1% of our 1,567 are theirs. Two runs that differ only
+    1,490 (89.9%), and 95.0% of our 1,568 are theirs. Two runs that differ only
     in their shuffles agree on 96.7% to 98.0% of significant pairs
     (``shuffle_noise_agreement``), so shuffles explain most of the gap on our
     side and about a quarter of it on theirs. The rest is the decoding: neurospatial's
@@ -771,13 +771,13 @@ def test_scores_match_the_codes_and_the_package_differs_by_its_decoding():
     assert round(float(np.mean(difference < 1e-6)), 4) == 0.9975
     assert difference.max() < 0.0021
     mine, theirs = whole_event_scores(DEFAULT, "package")
-    # One posterior on a single position has no spread, so no correlation.
+    # Two posteriors on a single position have no spread, so no correlation.
     defined = np.isfinite(mine)
-    assert int((~defined).sum()) == 1
+    assert int((~defined).sum()) == 2
     mine, theirs = mine[defined], theirs[defined]
     difference = np.abs(mine - theirs)
-    assert round(float(np.mean(difference < 0.01)), 4) == 0.7255
-    assert round(float(np.corrcoef(mine, theirs)[0, 1]), 4) == 0.9668
+    assert round(float(np.mean(difference < 0.01)), 4) == 0.7251
+    assert round(float(np.corrcoef(mine, theirs)[0, 1]), 4) == 0.9667
 
 
 @pytest.mark.realdata
@@ -848,7 +848,7 @@ def test_fig3a_run_regression():
         225,
         0.0537,
         0.461,
-        190.8,
+        190.5,
     )
     assert round(fit["B"], 4) == record["ours"]
     assert abs(fit["B"] - 0.05) <= 0.01
@@ -898,8 +898,8 @@ OURS_PROVENANCE = (
     "1000 shuffles, rng seeded [session index, event index], on the package's "
     "rate maps (unvisited bins NaN); authors_floor/rat3_session2/*, the same on "
     "the code's floored maps, a reference for the floor's effect. Computed on "
-    "2026-11-11 by a script running the same steps in parallel; write_ours() in "
-    "tests/datasets/test_tirole_2022_replay.py regenerates it, and the realdata "
+    "2026-11-12 by write_ours() in tests/datasets/test_tirole_2022_replay.py, "
+    "after decode_position stopped raising rates below 1e-10 Hz; the realdata "
     "tests recompute the default session's detection and first judged events."
 )
 
