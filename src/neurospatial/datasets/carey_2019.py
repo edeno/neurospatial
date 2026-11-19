@@ -275,16 +275,16 @@ WORKED_RESULT: dict[str, Any] = {
     "attempted": None,
     "why": None,
     "planted_recall": {
-        "judged": 161,
+        "judged": 157,
         "planted": 2656,
         "reading": (
             "replay planted into the 1,328 candidates, once on each trajectory, "
             "keeping every spike's time and drawing its cell from these rate maps "
             "along a real running path played 15 times faster, is judged replay "
-            "6.1% of the time, or 9.6% before the two sides are compared, since a "
+            "5.9% of the time, or 10.0% before the two sides are compared, since a "
             "planted sequence that also decodes on the other side is removed. "
             "Events with no content pass 4.2% and events that stay in one place "
-            "5.9%. It depends on the event's length: 0.3% under 60 ms and 25.0% at "
+            "6.6%. It depends on the event's length: 0.2% under 60 ms and 24.5% at "
             "90 ms or more, since the path stays inside the candidate and the rule "
             "needs 50 ms of it. So this judge passes about one known replay in "
             "twenty here, the real candidates' 3.1% is no more than events with no "

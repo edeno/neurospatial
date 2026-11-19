@@ -199,8 +199,8 @@ WORKED_RESULT: dict[str, Any] = {
         "reading": (
             "replay planted into the 37 windows, keeping every spike's time and "
             "drawing its cell from these rate maps along a real running path "
-            "played 15 times faster, is judged replay 18.6% of the time (21.6%, "
-            "346 of 1,602, on the 534 bursts). Events with no content pass 8.1% "
+            "played 15 times faster, is judged replay 18.6% of the time (21.7%, "
+            "347 of 1,602, on the 534 bursts). Events with no content pass 8.1% "
             "and events that stay in one place 16.2%. So this judge passes "
             "about one known replay in five here, and neither 29.7% nor the "
             "paper's 52% can be read as a rate of replay, and a low share is not "

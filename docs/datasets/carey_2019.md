@@ -163,7 +163,7 @@ pass the paper's two inputs to `Carey_candidate_detector` as
 ## Worked result
 
 **Status: tested against chance (level B). Not met: 41 sequences against a null 95th
-percentile of 55.45.** This check finds 6.1% of planted replay in this session, so it
+percentile of 55.45.** This check finds 5.9% of planted replay in this session, so it
 cannot show whether these events hold replay. It tests the detection and decoder, and
 it is not a number of the paper, which states no count for one session.
 
@@ -224,13 +224,13 @@ path played 15 times faster. Each was then judged by the route above.
 
 | Planted into the 1,328 candidates, each side | Judged replay |
 | --- | --- |
-| Sweep along a path | 161 of 2,656, 6.1% |
-| Stays in one place | 156 of 2,656, 5.9% |
+| Sweep along a path | 157 of 2,656, 5.9% |
+| Stays in one place | 174 of 2,656, 6.6% |
 | No position content | 112 of 2,656, 4.2% |
 
-Before the two sides are compared the sweep is 9.6%: a planted sequence that also
-decodes on the other side is removed. Recall depends on length: 0.3% of sweeps under
-60 ms are judged (5 of 1,440), 7.1% from 60 to 90 ms, and 25.0% at 90 ms or more (97
+Before the two sides are compared the sweep is 10.0%: a planted sequence that also
+decodes on the other side is removed. Recall depends on length: 0.2% of sweeps under
+60 ms are judged (3 of 1,440), 7.1% from 60 to 90 ms, and 24.5% at 90 ms or more (95
 of 388). The path stays inside the candidate, the median candidate is under 60 ms,
 and the rule needs 50 ms of it, so a real sequence that runs past its candidate's
 ends is not what this measures. This judge passes about one known replay in twenty

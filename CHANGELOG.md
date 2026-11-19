@@ -1285,7 +1285,7 @@ give the measured rates:
   text (5 cm/s, an exposure of 5 ms, a 2 ms spike density, 111 bins per trajectory,
   sequences over the whole session): 41 sequences on those candidates, above the
   shifted-spike null (95th percentile 8.1) and not above the shifted-maps null
-  (55.45), so its fixed criterion is not met. Planted replay is judged 6.1% of the
+  (55.45), so its fixed criterion is not met. Planted replay is judged 5.9% of the
   time, so that count
   is not a rate of replay. Over the paper's 19 sessions the left share differs by
   restriction as in the paper, and as much with shifted rate maps, and it follows
