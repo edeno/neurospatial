@@ -179,7 +179,7 @@ WORKED_RESULT: dict[str, Any] = {
             "That the criterion is met is not firm: 200 draws of the same null put "
             "the 95th percentile at 27.0%, and 6 of them reach 29.7%; and one more "
             "row at each event's end, holding only spikes the row before holds, "
-            "gives 8 of 37 (21.6%), below that row rule's own 29.9%. "
+            "gives 8 of 37 (21.6%), below that row rule's own 32.4%. "
             "Candidates are lost at the SWR gate: 0.12 SWRs with five place cells "
             "per correct trial in the reward period over the 25 sets (0.49 on this "
             "set) against the paper's 0.61 (p. 693). The paper's 132,665 SWRs are "

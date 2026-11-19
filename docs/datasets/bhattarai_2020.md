@@ -209,8 +209,8 @@ diagnostics, stated beside it and not part of the criterion.
 **Why the verdict is not firm.** The share clears the bar by one event of 37, and one
 of the 20 draws is above it (32.4%). With 200 draws the 95th percentile is 27.0%, and
 6 draws reach 29.7%. Adding one more window at each event's end, which holds only
-spikes the window before already holds, gives 8 of 37 (21.6%, against 29.9%), which
-fails. Over the 25 sets the same extra window gives 39 and 1,063 where the table has
+spikes the window before already holds, gives 8 of 37 (21.6%, against 32.4%), which
+fails. Over the 25 sets the same extra window gives 40 and 1,064 where the table has
 42 and 1,024, so it does not favour either side. Read this as: on 37 events, the test
 cannot tell these candidates from the null.
 
